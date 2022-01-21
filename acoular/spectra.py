@@ -30,6 +30,171 @@ from .calib import Calib
 from .configuration import config
 
 
+class Spectra (HasPrivateTraits):
+
+    #: The :class:`~acoular.tprocess.SamplesGenerator` object that provides the data.
+    time_data = Trait(SamplesGenerator, 
+        desc="time data object")
+
+    #: Number of samples 
+    numchannels = Delegate('time_data')
+
+    #: The :class:`~acoular.calib.Calib` object that provides the calibration data, 
+    #: defaults to no calibration, i.e. the raw time data is used.
+    #:
+    #: **deprecated**:      use :attr:`~acoular.sources.TimeSamples.calib` property of 
+    #: :class:`~acoular.sources.TimeSamples` objects
+    #calib = Instance(Calib)
+
+    #: FFT/DFT block size, positive integer, 
+    #: defaults to 1024.
+    #block_size = Trait(1024, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
+    block_size = Int(1024,
+        desc="number of samples per FFT block")
+    
+    
+    #: Window function for FFT, one of:
+    #:   * 'Rectangular' (default)
+    #:   * 'Hanning'
+    #:   * 'Hamming'
+    #:   * 'Bartlett'
+    #:   * 'Blackman'
+    window = Trait('Rectangular', 
+        {'Rectangular':ones, 
+        'Hanning':hanning, 
+        'Hamming':hamming, 
+        'Bartlett':bartlett, 
+        'Blackman':blackman}, 
+        desc="type of window for FFT")
+
+    #: Overlap factor for averaging: 'None'(default), '50%', '75%', '87.5%'.
+    overlap = Trait('None', {'None':1, '50%':2, '75%':4, '87.5%':8}, 
+        desc="overlap of FFT blocks")
+        
+    #: Flag, if true (default), the result is cached in h5 files and need not
+    #: to be recomputed during subsequent program runs.
+    cached = Bool(True, 
+        desc="cached flag")   
+
+    #: Number of FFT blocks to average, readonly
+    #: (set from block_size and overlap).
+    num_blocks = Property(
+        desc="overall number of FFT blocks")
+    
+    #: The floating-number-precision of entries of csm, eigenvalues and 
+    #: eigenvectors, corresponding to numpy dtypes. Default is 64 bit.
+    # precision = Trait('complex128', 'complex64', 
+    #                   desc="precision csm, eva, eve")
+    precision = Trait('complex128', 'complex64', 
+                      desc="precision spectrum")
+    
+
+    # internal identifier
+    digest = Property( 
+        depends_on = ['time_data.digest', 'block_size', 
+            'window', 'overlap', 'precision'], 
+        )
+
+    #: The auto power spectrum, 
+    #: (number of frequencies, numchannels) array of float;
+    #: readonly.
+    aps = Property( 
+        desc="auto power spectrum")
+
+
+    @cached_property
+    def _get_digest( self ):
+        return digest( self )
+
+    @cached_property
+    def _get_basename( self ):
+        if 'basename' in self.time_data.all_trait_names():
+            return self.time_data.basename
+        else: 
+            return self.time_data.__class__.__name__ + self.time_data.digest
+
+    @property_depends_on('time_data.numsamples, block_size, overlap')
+    def _get_num_blocks ( self ):
+        return self.overlap_*self.time_data.numsamples/self.block_size-\
+        self.overlap_+1
+
+
+
+    def calc_power_spectrum( self ):
+        """ power spectrum calculation """
+        t = self.time_data
+        wind = self.window_( self.block_size )
+        weight = dot( wind, wind )
+        wind = wind[newaxis, :].swapaxes( 0, 1 )
+        numfreq = int(self.block_size/2 + 1)
+
+        # for backward compatibility
+        # if self.calib and self.calib.num_mics > 0:
+        #     if self.calib.num_mics == t.numchannels:
+        #         wind = wind * self.calib.data[newaxis, :]
+        #     else:
+        #         raise ValueError(
+        #                 "Calibration data not compatible: %i, %i" % \
+        #                 (self.calib.num_mics, t.numchannels))
+        bs = self.block_size
+        
+        # use faster rfft if input is real, otherwise full fft
+        if isrealobj(next(t.result(1))):
+            fft_func = fft.rfft
+            temp = empty((2*bs, t.numchannels))
+        else:
+            fft_func = fft.fft
+            temp = empty((2*bs, t.numchannels), dtype = complex)
+            
+        powspec = zeros((numfreq,t.numchannels))#, dtype=self.precision)
+        pos = bs
+        posinc = bs/self.overlap_
+        for data in t.result(bs):
+            ns = data.shape[0]
+            temp[bs:bs+ns] = data
+            while pos+bs <= bs+ns:
+                ft = fft_func(temp[int(pos):int(pos+bs)]*wind, None, 0)[:numfreq].astype(self.precision)
+                # Only upper triangular part of matrix is calculated (for speed reasons).
+                powspec += (ft*ft.conjugate()).real
+                pos += posinc
+            temp[0:bs] = temp[bs:]
+            pos -= bs
+        
+        # onesided spectrum: multiplication by 2.0=sqrt(2)^2
+        powspec *= (2.0/self.block_size/weight/self.num_blocks)
+        return powspec
+
+
+    @property_depends_on('digest')
+    def _get_aps ( self ):
+        """
+        Main work is done here:
+        Cross spectral matrix is either loaded from cache file or
+        calculated and then additionally stored into cache.
+        """
+        #self._handle_dual_calibration()
+        #if (
+        #        config.global_caching == 'none' or 
+        #        (config.global_caching == 'individual' and self.cached == False)
+        #    ):
+        return self.calc_power_spectrum()
+        #else:
+        #    return self._get_filecache('aps')
+
+
+    def fftfreq ( self ):
+        """
+        Return the Discrete Fourier Transform sample frequencies.
+        
+        Returns
+        -------
+        f : ndarray
+            Array of length *block_size/2+1* containing the sample frequencies.
+        """
+        return abs(fft.fftfreq(self.block_size, 1./self.time_data.sample_freq)\
+                    [:int(self.block_size/2+1)])
+
+
 
 class PowerSpectra( HasPrivateTraits ):
     """Provides the cross spectral matrix of multichannel time data
