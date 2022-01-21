@@ -49,6 +49,45 @@ def _delayandsum4(data, offsets, ifactor2, steeramp, out, autopower):
                 out[n,gi] += r
                 autopower[n,gi] += r*r
 
+
+@nb.njit([(nb.float32[:,:], nb.int32[:,:], nb.float32[:,:], nb.float32[:,:], nb.float32[:,:], nb.float32[:,:]),
+            (nb.float64[:,:], nb.int64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:], nb.float64[:,:])],
+                cache=True, parallel=True, fastmath=True)
+def _delayandnothing5(data, offsets, ifactor2, steeramp, out, autopower):
+    """ Performs one time step of delay and sum with output and additional autopower removal
+    
+    **Note**: parallel could be set to true, but unless the number of gridpoints gets huge, it
+    will be _slower_ in parallel mode
+    
+    Parameters
+    ----------
+    data : float64[nSamples, nMics] 
+        The time history for all channels.
+    offsets : int64[nBlockSamples, -, nMics] 
+        Indices for each grid point and each channel.
+    ifactor2: float64[nBlockSamples,-, nMics] 
+        Second interpolation factor, the first one is computed internally.
+    steeramp: float64[nBlockSamples,-, nMics] 
+        Amplitude factor from steering vector.        
+    
+    Returns
+    -------
+    None : as the inputs out and autopower get overwritten.
+    """
+    num, numchannels = offsets.shape
+    num = out.shape[0]
+    for n in nb.prange(num):
+        #for gi in nb.prange(gridsize):
+        #out[n,gi] = 0
+        #autopower[n,gi] = 0
+        for mi in range(numchannels):
+            ind = offsets[n,mi] + n
+            r = (data[ind,mi] * (1-ifactor2[n,mi]) \
+                + data[ind+1,mi] * ifactor2[n,mi]) * steeramp[n,mi]
+            out[n,mi] = r
+            autopower[n,mi] += r*r 
+
+
 @nb.njit([(nb.float32[:,:], nb.int32[:,:,:], nb.float32[:,:,:], nb.float32[:,:,:], nb.float32[:,:], nb.float32[:,:]),
             (nb.float64[:,:], nb.int64[:,:,:], nb.float64[:,:,:], nb.float64[:,:,:], nb.float64[:,:], nb.float64[:,:])],
                 cache=True, parallel=True, fastmath=True)

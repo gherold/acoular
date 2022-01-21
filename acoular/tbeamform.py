@@ -36,7 +36,7 @@ from .grids import RectGrid
 from .trajectory import Trajectory
 from .tprocess import TimeInOut
 from .fbeamform import SteeringVector, L_p
-from .tfastfuncs import _delayandsum4, _delayandsum5, \
+from .tfastfuncs import _delayandsum4, _delayandsum5, _delayandnothing5,\
     _steer_I, _steer_II, _steer_III, _steer_IV, _delays, _modf
 
 
@@ -615,7 +615,32 @@ class BeamformerTimeTraj( BeamformerTime ):
         _delayandsum5(p_res, d_index, d_interp2, amp, result, autopow)
         return result, autopow          
   
-        
+
+class DedopplerTimeTraj(BeamformerTimeTraj):
+    
+    #: Number of channels in output (=number of mics).
+    numchannels = Delegate('source')
+    
+    #grid = Instance(RectGrid(x_min=0, x_max=0,y_min=0,y_max=0,z=0,increment=0.1),RectGrid)
+    
+    def delay_and_sum(self,num,p_res,d_interp2,d_index,amp): 
+        ''' standard delay-and-sum method, but without the summing ''' 
+        if self.precision==64:
+            fdtype = float64
+        else:
+            fdtype = float32
+        result = empty((num, self.numchannels), dtype=fdtype) # output array
+        autopow = empty((num, self.numchannels), dtype=fdtype) # output array
+        _delayandnothing5(p_res, d_index[:,0,:], d_interp2[:,0,:], amp[:,0,:], result, autopow)
+        #result[:,0]+=result[:,1]
+        #result[:,1]=result[:,0]
+        return result, autopow    
+
+
+
+
+
+  
 class BeamformerTimeSqTraj( BeamformerTimeSq, BeamformerTimeTraj ):
     """
     Provides a time domain beamformer with time-dependent

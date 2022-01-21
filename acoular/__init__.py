@@ -33,7 +33,7 @@ try:
 except:
     pass
 
-from .tbeamform import IntegratorSectorTime, \
+from .tbeamform import IntegratorSectorTime, DedopplerTimeTraj,\
 BeamformerTime, BeamformerTimeSq, BeamformerTimeTraj, BeamformerTimeSqTraj,\
 BeamformerCleant, BeamformerCleantSq, BeamformerCleantTraj, BeamformerCleantSqTraj
 from .tprocess import SamplesGenerator, TimeInOut, MaskedTimeInOut, ChannelMixer, \
