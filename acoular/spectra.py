@@ -15,10 +15,11 @@
 from warnings import warn
 
 from numpy import array, ones, hanning, hamming, bartlett, blackman, \
-dot, newaxis, zeros, empty, fft, linalg, \
+dot, newaxis, zeros, empty, fft, linalg, isrealobj, absolute, diag, \
 searchsorted, isscalar, fill_diagonal, arange, zeros_like, sum
 from traits.api import HasPrivateTraits, Int, Property, Instance, Trait, \
-Range, Bool, cached_property, property_depends_on, Delegate, Float
+CArray, Bool, cached_property, property_depends_on, Delegate, Float, \
+on_trait_change, Range
 
 from .fastFuncs import calcCSM
 from .h5cache import H5cache
@@ -62,9 +63,10 @@ class PowerSpectra( HasPrivateTraits ):
     #: :class:`~acoular.sources.TimeSamples` objects
     calib = Instance(Calib)
 
-    #: FFT block size, one of: 128, 256, 512, 1024, 2048 ... 65536,
+    #: FFT/DFT block size, positive integer, 
     #: defaults to 1024.
-    block_size = Trait(1024, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
+    #block_size = Trait(1024, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
+    block_size = Int(1024,
         desc="number of samples per FFT block")
 
     # Shadow trait, should not be set directly, for internal use.
@@ -151,6 +153,15 @@ class PowerSpectra( HasPrivateTraits ):
     csm = Property( 
         desc="cross spectral matrix")
     
+    
+    diagonal = Trait('original', 'original', 'zero', 'reconstruct')
+    
+       
+    
+    #TODO: letztendlich verwendete CSM soll konstruiert wereden aus original 
+    #CSM + ersetzter separater Hauptdiagonale, die je nach "diagonal"-trait berechnet
+    #bzw. gecached wird
+    
     #: The floating-number-precision of entries of csm, eigenvalues and 
     #: eigenvectors, corresponding to numpy dtypes. Default is 64 bit.
     precision = Trait('complex128', 'complex64', 
@@ -176,6 +187,13 @@ class PowerSpectra( HasPrivateTraits ):
     # hdf5 cache file
     h5f = Instance( H5CacheFileBase, transient = True )
     
+    # internal flag to determine whether eigenvals  and vecs have been calculated
+    _eigflag = Bool(False) 
+    #local variables
+    _eve = CArray()
+    _eva = CArray()
+    
+    
     @property_depends_on('time_data.numsamples, block_size, overlap')
     def _get_num_blocks ( self ):
         return self.overlap_*self.time_data.numsamples/self.block_size-\
@@ -191,7 +209,10 @@ class PowerSpectra( HasPrivateTraits ):
     def _set_freq_range( self, freq_range ):# by setting this the user sets _freqlc and _freqhc
         self._index_set_last = False
         self._freqlc = freq_range[0]
-        self._freqhc = freq_range[1]
+        if len(freq_range)==1: # take next available frequency as upper limit
+            self._freqhc = freq_range[0]+self.fftfreq()[1]
+        else: # 2 entries?
+            self._freqhc = freq_range[1]
 
     @property_depends_on( 'time_data.sample_freq, block_size, _ind_low, _freqlc' )
     def _get_ind_low( self ):
@@ -233,6 +254,10 @@ class PowerSpectra( HasPrivateTraits ):
         else: 
             return self.time_data.__class__.__name__ + self.time_data.digest
 
+    @on_trait_change('digest')
+    def _reset_eigflag( self ):
+        self._eigflag = False
+
     def calc_csm( self ):
         """ csm calculation """
         t = self.time_data
@@ -252,22 +277,35 @@ class PowerSpectra( HasPrivateTraits ):
                         "Calibration data not compatible: %i, %i" % \
                         (self.calib.num_mics, t.numchannels))
         bs = self.block_size
-        temp = empty((2*bs, t.numchannels))
+        
+        # use faster rfft if input is real, otherwise full fft
+        if isrealobj(next(t.result(1))):
+            fft_func = fft.rfft
+            temp = empty((2*bs, t.numchannels))
+        else:
+            fft_func = fft.fft
+            temp = empty((2*bs, t.numchannels), dtype = complex)
+            
         pos = bs
         posinc = bs/self.overlap_
         for data in t.result(bs):
             ns = data.shape[0]
             temp[bs:bs+ns] = data
             while pos+bs <= bs+ns:
-                ft = fft.rfft(temp[int(pos):int(pos+bs)]*wind, None, 0).astype(self.precision)
-                calcCSM(csmUpper, ft)  # only upper triangular part of matrix is calculated (for speed reasons)
+                ft = fft_func(temp[int(pos):int(pos+bs)]*wind, None, 0)[:numfreq].astype(self.precision)
+                # Only upper triangular part of matrix is calculated (for speed reasons).
+                calcCSM(csmUpper, ft)
                 pos += posinc
             temp[0:bs] = temp[bs:]
             pos -= bs
         
-        # create the full csm matrix via transposing and complex conj.
-        csmLower = csmUpper.conj().transpose(0,2,1)
-        [fill_diagonal(csmLower[cntFreq, :, :], 0) for cntFreq in range(csmLower.shape[0])]
+        # create the full csm matrix via transposingand complex conj.
+        if self.diagonal == 'zero': # this is only for the time being, do this outside the function later on!
+            [fill_diagonal(csmUpper[cntFreq, :, :], 0) for cntFreq in range(csmUpper.shape[0])]
+            csmLower = csmUpper.conj().transpose(0,2,1)
+        else:    
+            csmLower = csmUpper.conj().transpose(0,2,1)
+            [fill_diagonal(csmLower[cntFreq, :, :], 0) for cntFreq in range(csmLower.shape[0])]
         csm = csmLower + csmUpper
 
         # onesided spectrum: multiplication by 2.0=sqrt(2)^2
@@ -284,15 +322,19 @@ class PowerSpectra( HasPrivateTraits ):
         eve = empty(csm_shape, dtype=self.precision)
         for i in range(csm_shape[0]):
             (eva[i], eve[i])=linalg.eigh(self.csm[i])
-        return (eva,eve)
+            
+        #return (eva,eve)
+        self._eve = eve
+        self._eva = eva.clip(min=0) #TODO: ".clip(min=0)" should only be temporary here
+        self._eigflag = True
 
     def calc_eva( self ):
         """ calculates eigenvalues of csm """
-        return self.calc_ev()[0]
+        return self._eva#calc_ev()[0]
     
     def calc_eve( self ):
         """ calculates eigenvectors of csm """
-        return self.calc_ev()[1]
+        return self._eve#calc_ev()[1]
                 
     def _handle_dual_calibration(self):
         obj = self.time_data # start with time_data obj
@@ -369,12 +411,13 @@ class PowerSpectra( HasPrivateTraits ):
         else:
             return self._get_filecache('csm')
                           
-    @property_depends_on('digest')
+    #@property_depends_on('digest')
+    @cached_property
     def _get_eva ( self ):
         """
         Eigenvalues of cross spectral matrix are either loaded from cache file or
         calculated and then additionally stored into cache.
-        """
+        ""
         if (
                 config.global_caching == 'none' or 
                 (config.global_caching == 'individual' and self.cached == False)
@@ -382,13 +425,18 @@ class PowerSpectra( HasPrivateTraits ):
             return self.calc_eva()
         else:
             return self._get_filecache('eva')
+        """
+        if not self._eigflag:
+            self.calc_ev() #TODO: rename to _calc_ev later
+        return self._eva
+
 
     @property_depends_on('digest')
     def _get_eve ( self ):
         """
         Eigenvectors of cross spectral matrix are either loaded from cache file or
         calculated and then additionally stored into cache.
-        """
+        ""
         if (
                 config.global_caching == 'none' or 
                 (config.global_caching == 'individual' and self.cached == False)
@@ -396,6 +444,10 @@ class PowerSpectra( HasPrivateTraits ):
             return self.calc_eve()
         else:
             return self._get_filecache('eve')
+        """
+        if not self._eigflag:
+            self.calc_ev()
+        return self._eve
 
     def synthetic_ev( self, freq, num=0):
         """Return synthesized frequency band values of the eigenvalues.
@@ -449,7 +501,61 @@ class PowerSpectra( HasPrivateTraits ):
                     [:int(self.block_size/2+1)])
 
 
+class PowerSpectraDR( PowerSpectra ):
 
+    #: Number of iterations for CSM approximation.
+    n_iter = Int(50,
+        desc="number of iterations for CSM approximation")
+
+    # internal identifier
+    digest = Property( 
+        depends_on = ['time_data.digest', 'calib.digest', 'block_size', 
+            'window', 'overlap', 'precision', 'n_iter'], 
+        )
+
+    @cached_property
+    def _get_digest( self ):
+        return digest( self )
+    
+    @property_depends_on('digest')
+    def _get_csm(self):
+        # my csm recon algo
+        #csm = self.calc_csm()
+        fullcsm = self.calc_csm()
+        csm = fullcsm[self.ind_low:self.ind_high]
+        nc = csm.shape[-1]
+        idiag = arange(nc)
+        # calculate amplitude of entries
+        for ind in range(csm.shape[0]):
+            ac = absolute(csm[ind])
+            # get csm diagonal
+            dia = diag(ac)
+            # get position and value of maximum in diagonal (position maybe not needed)
+            # indmaxdia = argmax(dia)
+            # max_dia = dia[indmaxdia]
+            max_dia = max(dia)
+            # get maximum from off-diagonal values
+            max_off = (ac-diag(dia)).max()
+            # calculate 1st diag approximation with correction factor 
+            new_dia = dia * (max_off / max_dia)
+            # loop to approximate further
+            for i in range(self.n_iter):
+                # from diag new theoretical mode amplitudes
+                mode_amps = new_dia**0.5
+                # calculate csm amp estimate
+                new_ac = mode_amps[:,newaxis] * mode_amps[newaxis,:]
+                # calculate difference to actual csm
+                diff = ac-new_ac # probably mostly positive vals
+                # set diag of diff to 0 (this is unwanted info)
+                diff[idiag, idiag] = 0 
+                # correct diagonal by average offset
+                new_dia += sum(diff,axis=0)/(nc-1)
+                # set negative values to zero
+                new_dia[new_dia<0]=0
+            # set approximated new diag into csm
+            csm[ind, idiag, idiag] = new_dia
+        fullcsm[self.ind_low:self.ind_high] = csm
+        return fullcsm
 
 
 def synthetic (data, freqs, f, num=3):

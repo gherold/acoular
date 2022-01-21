@@ -668,8 +668,8 @@ class BeamformerFunctional( BeamformerBase ):
     digest = Property(depends_on = ['freq_data.digest', '_steer_obj.digest', 'r_diag', 'gamma'])
     
     #: Functional Beamforming is only well defined for full CSM
-    r_diag = Enum(False, 
-                  desc="False, as Functional Beamformer is only well defined for the full CSM")
+    #r_diag = Enum(False, 
+    #              desc="False, as Functional Beamformer is only well defined for the full CSM")
 
     @cached_property
     def _get_digest( self ):
@@ -705,7 +705,7 @@ class BeamformerFunctional( BeamformerBase ):
         param_steer_type, steer_vector = self._beamformer_params()
         for i in self.freq_data.indices:
             if not fr[i]:
-                if self.r_diag:
+                if False:#self.r_diag:
                     # This case is not used at the moment (see Trait r_diag)  
                     # It would need some testing as structural changes were not tested...
 #==============================================================================
@@ -728,8 +728,10 @@ class BeamformerFunctional( BeamformerBase ):
                     # set (unphysical) negative output values to 0
                     indNegSign = sign(beamformerOutput) < 0
                     beamformerOutput[indNegSign] = 0.0
-                else:
+                if True:# else
                     eva = array(self.freq_data.eva[i], dtype='float64') ** (1.0 / self.gamma)
+                    #eva[eva-2e-16<0] = 0.0
+                    #eva[eva>0] **= (1.0 / self.gamma)
                     eve = array(self.freq_data.eve[i], dtype='complex128')
                     beamformerOutput, steerNorm = beamformerFreq(param_steer_type, 
                                                                  self.r_diag, 
