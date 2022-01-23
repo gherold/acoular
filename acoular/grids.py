@@ -26,7 +26,8 @@
 # imports from other packages
 from numpy import mgrid, s_, array, arange, isscalar, absolute, ones, argmin,\
 zeros, where,  asfarray,concatenate,sum,ma,ones_like,inf,copysign,fabs ,append,\
-tile,newaxis
+tile, newaxis, linspace, pi, sin, cos, meshgrid, ravel_multi_index, reshape,\
+arccos, searchsorted
 from numpy.linalg import norm
 from traits.api import HasPrivateTraits, Float, Property, Any, \
 property_depends_on, cached_property, Bool, List, Instance, File ,on_trait_change,\
@@ -889,6 +890,194 @@ class LineGrid( Grid ):
         return pos.T
 
 
+
+class LatLongSphereGrid ( Grid ):
+    """
+    regular angles grid 
+    (r, theta, phi) ISO 80000-2:2019 convention
+    latitude theta = 0 is towards pos z in right-handed system (i.e. negative z here)
+    longitude phi = 0 at positive x axis, counts positive towards positive y axis (90 ° there)
+   
+    """
+    #: Sphere radius. Needed only for conversion into 3D cartesian coordinates
+    r = Float(1) 
+    
+    
+    #: The number of latitudes dividing the sphere along theta
+    num_lat = Int(1,
+        desc="number of latitudes")
+    
+    #: The number of longitudes dividing the sphere along phi
+    num_long = Int(1,
+        desc="number of longitudes")
+
+    @property_depends_on('num_lat, num_long')
+    def _get_size ( self ):
+        return self.num_lat*self.num_long
+
+
+    @property_depends_on('num_lat, num_long')
+    def _get_shape ( self ):
+        return (self.num_lat, self.num_long)
+
+    #: Grid positions as (2, :attr:`size`) array of floats, without invalid
+    #: microphones; readonly.
+    angles = Property(desc="theta, phi positions of grid points")
+    
+    extent = Property()
+    
+    
+    @property_depends_on('num_lat, num_long')
+    def _get_angles( self ):
+        # start line at pole, point is offset by 1/2 step
+        theta, thetastep = linspace(0, pi, self.num_lat, endpoint=False, retstep=True)
+        # start line at 0 meridian, point is offset by 1/2 step
+        phi, phistep  = linspace(0, 2*pi, self.num_long, endpoint=False, retstep=True)
+        return reshape(meshgrid(theta+thetastep/2, phi+phistep/2),(2,self.size))
+    
+    
+    @property_depends_on('num_lat, num_long')
+    def _get_gpos( self ):
+        theta = self.angles[0]
+        phi = self.angles[1]
+        return array([self.r*cos(phi)*sin(theta),
+                      self.r*sin(phi)*sin(theta),
+                      -self.r*cos(theta)])
+    
+    
+    def index ( self, theta, phi):
+        """
+        Queries the indices for a grid point near a certain co-ordinate.
+
+        This can be used to query results or co-ordinates at/near a certain
+        co-ordinate.
+        
+        Parameters
+        ----------
+        theta, phi : float
+            The co-ordinates for which the indices are queried.
+
+        Returns
+        -------
+        integer
+        not : 2-tuple of integers
+            The indices that give the grid point nearest to the given theta, phi
+            co-ordinates from an array with the same shape as the grid.            
+        """
+        thetastep = pi/self.num_lat
+        phistep = 2*pi/self.num_long
+        
+        thetai = int((theta%pi)/thetastep)
+        phii = int((phi%(2*pi))/phistep)
+        
+        return ravel_multi_index((thetai,phii), self.shape)
+
+    def _get_extent(self):
+        return (0,2*pi,0,pi)
+
+
+class EqualSphereGrid (LatLongSphereGrid):
+    
+    #: The number of center longitudes dividing the sphere along phi.
+    #: This will directly influence the overall tesselation of the sphere.
+    num_long = Int(8,
+        desc="number of longitudes")
+
+
+    _calc_flag = Bool(False)
+
+    theta_borders = Property()
+    
+    _theta_borders = CArray()
+    _angs = CArray()
+    
+    #nlongs = CArray()
+    phisteps = CArray() 
+    
+    segment_indices = List([arange(1),
+                            arange(4)+1,
+                            arange(8)+4+1,
+                            arange(4)+8+4+1,
+                            arange(1)+8+4+1+4])
+
+    
+    def _calc_stuff(self):
+        nlongs = array([1,4,8,4,1])
+        if self.num_long != 8: 
+            raise NotImplementedError(f'Sphere partitioning with {self.num_long} longitudes not yet supported.')
+        theta_cap = arccos(8/9)
+        theta_ring = arccos(4/9)
+        
+        self._theta_borders = [theta_cap,theta_ring,pi-theta_ring,pi-theta_cap]
+        self.phisteps = zeros((5,))
+        
+        angs = zeros((2, self.size))
+        angs[0,-1] = pi
+        ind = 1
+        inner_thetas = (array(self._theta_borders)[1:]+array(self._theta_borders)[:-1])/2
+        for iphi,(nl,theta) in enumerate(zip(nlongs[1:-1],inner_thetas)):
+            phis, phistep = linspace(0,2*pi,nl,endpoint=False, retstep=True)
+            self.phisteps[iphi+1] = phistep
+            angs[0,ind:ind+nl] = ones((nl,)) * theta
+            angs[1,ind:ind+nl] = phis
+            ind+=nl
+        self._angs = angs        
+      
+        
+        
+        self._calc_flag = True
+    
+    @property_depends_on('num_long')
+    def _get_theta_borders( self ):
+        if not self._calc_flag:
+            self._calc_stuff()
+        return self._theta_borders
+        
+    @property_depends_on('num_long')
+    def _get_size ( self ):
+        return 18
+        
+    @property_depends_on('num_long')
+    def _get_angles( self ):
+        if not self._calc_flag:
+            self._calc_stuff()
+        return self._angs    
+        
+            
+            
+    def index ( self, theta, phi):
+         """
+         Queries the indices for a grid point near a certain co-ordinate.
+
+         This can be used to query results or co-ordinates at/near a certain
+         co-ordinate.
+         
+         Parameters
+         ----------
+         theta, phi : float
+             The co-ordinates for which the indices are queried.
+
+         Returns
+         -------
+         integer
+         not : 2-tuple of integers
+             The indices that give the grid point nearest to the given theta, phi
+             co-ordinates from an array with the same shape as the grid.            
+         """
+         ind1 = searchsorted(array([0]+self._theta_borders),theta,side="right")
+         if 0<ind1<4:
+             #ind2 = int(phi/self.phisteps[ind1]-0.5)
+             ind2 = int( ((phi-self.phisteps[ind1]/2)%(2*pi))/self.phisteps[ind1]) 
+
+             #print(ind1,ind2,phi,self.phisteps)
+         else:
+             ind2=0
+         return self.segment_indices[ind1][ind2]
+        
+   
+
+    
+    
 class MergeGrid( Grid ):
     """
     Base class for merging different grid geometries.
