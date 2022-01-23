@@ -16,7 +16,8 @@ from warnings import warn
 
 from numpy import array, ones, hanning, hamming, bartlett, blackman, \
 dot, newaxis, zeros, empty, fft, linalg, isrealobj, absolute, diag, \
-searchsorted, isscalar, fill_diagonal, arange, zeros_like, sum
+searchsorted, isscalar, fill_diagonal, arange, zeros_like, sum, arccos, arctan2
+from numpy.linalg import norm
 from traits.api import HasPrivateTraits, Int, Property, Instance, Trait, \
 CArray, Bool, cached_property, property_depends_on, Delegate, Float, \
 on_trait_change, Range
@@ -28,7 +29,9 @@ from .internal import digest
 from .tprocess import SamplesGenerator
 from .calib import Calib
 from .configuration import config
-
+from .trajectory import Trajectory
+from .microphones import MicGeom
+from .grids import LatLongSphereGrid
 
 class Spectra (HasPrivateTraits):
 
@@ -36,7 +39,7 @@ class Spectra (HasPrivateTraits):
     time_data = Trait(SamplesGenerator, 
         desc="time data object")
 
-    #: Number of samples 
+    #: Number of channels 
     numchannels = Delegate('time_data')
 
     #: The :class:`~acoular.calib.Calib` object that provides the calibration data, 
@@ -115,7 +118,7 @@ class Spectra (HasPrivateTraits):
 
     @property_depends_on('time_data.numsamples, block_size, overlap')
     def _get_num_blocks ( self ):
-        return self.overlap_*self.time_data.numsamples/self.block_size-\
+        return self.overlap_*self.time_data.numsamples//self.block_size-\
         self.overlap_+1
 
 
@@ -128,14 +131,6 @@ class Spectra (HasPrivateTraits):
         wind = wind[newaxis, :].swapaxes( 0, 1 )
         numfreq = int(self.block_size/2 + 1)
 
-        # for backward compatibility
-        # if self.calib and self.calib.num_mics > 0:
-        #     if self.calib.num_mics == t.numchannels:
-        #         wind = wind * self.calib.data[newaxis, :]
-        #     else:
-        #         raise ValueError(
-        #                 "Calibration data not compatible: %i, %i" % \
-        #                 (self.calib.num_mics, t.numchannels))
         bs = self.block_size
         
         # use faster rfft if input is real, otherwise full fft
@@ -154,7 +149,6 @@ class Spectra (HasPrivateTraits):
             temp[bs:bs+ns] = data
             while pos+bs <= bs+ns:
                 ft = fft_func(temp[int(pos):int(pos+bs)]*wind, None, 0)[:numfreq].astype(self.precision)
-                # Only upper triangular part of matrix is calculated (for speed reasons).
                 powspec += (ft*ft.conjugate()).real
                 pos += posinc
             temp[0:bs] = temp[bs:]
@@ -193,6 +187,167 @@ class Spectra (HasPrivateTraits):
         """
         return abs(fft.fftfreq(self.block_size, 1./self.time_data.sample_freq)\
                     [:int(self.block_size/2+1)])
+
+
+class CollectGridTrajSpectra(Spectra):
+       
+    #: Number of channels in output (= number of sectors).
+    numchannels = Property( depends_on = ['grid', ])
+    
+    
+
+    #: :class:`~acoular.trajectory.Trajectory` or derived object.
+    #: Start time is assumed to be the same as for the samples.
+    trajectory = Trait(Trajectory, 
+        desc="trajectory of the grid center")
+    
+    
+    
+    
+    
+    #: approximate the trajectory with a straight line and define it as z axis
+    #: this will help comparing different trajectories with each other
+    rotation = Property(depends_on = ['trajectory','time_data.digest'])
+    
+    #: :class:`~acoular.microphones.MicGeom` object that provides the microphone locations.
+    mics = Trait(MicGeom, 
+        desc="microphone geometry")
+    
+    
+    grid = Trait(LatLongSphereGrid,
+                 desc="grid for spectra collection")
+    
+    ### for debugging and checking
+    rotraj =  Instance(Trajectory(),Trajectory)
+    _sph_coords = CArray()
+    _grid_num_blocks = CArray()
+    ### ------------------
+    
+    
+    def _get_numchannels(self):
+        return self.grid.size
+    
+    
+    @cached_property
+    def _get_rotation ( self ):
+        t_end = self.time_data.numsamples/self.time_data.sample_freq
+        xstart = array(self.trajectory.location(0))
+        xend = array(self.trajectory.location(t_end))
+        vec = xend - xstart
+
+        # distance in xz plane (y is ignored b/c gravity should orient drone)
+        r_xz = (vec[0]**2 + vec[2]**2)**0.5
+        
+        # get angle alpha
+        sin_alpha = vec[0]/r_xz
+        cos_alpha = -vec[2]/r_xz # minus sign because left-oriented z axis
+
+        
+        # get negative (!) angle rotation matrix for left-oriented system
+        # (negative because we want to rotate the coords in the other direction)
+        Ry_neg = array([[ cos_alpha, 0, sin_alpha],
+                        [         0, 1,         0],
+                        [-sin_alpha, 0, cos_alpha]])
+        
+        return Ry_neg
+    
+    def calc_power_spectrum( self ):
+        """ power spectrum calculation """
+        
+        # rotation matrix
+        rot = self.rotation
+        
+        # initialize rotated trajectory
+        #rotraj = Trajectory()
+        for key in self.trajectory.points.keys():
+            self.rotraj.points[key] = tuple(rot @ self.trajectory.points[key])
+        
+        # get relative orientation of mic geom
+        mpos = rot @ self.mics.mpos    
+        
+        # some abbreviations for spectra calculation
+        t = self.time_data
+        wind = self.window_( self.block_size )
+        weight = dot( wind, wind )
+        wind = wind[newaxis, :].swapaxes( 0, 1 )
+        numfreq = int(self.block_size/2 + 1)
+        bs = self.block_size
+        
+        # use faster rfft if input is real, otherwise full fft
+        if isrealobj(next(t.result(1))):
+            fft_func = fft.rfft
+            temp = zeros((2*bs, t.numchannels))
+        else:
+            fft_func = fft.fft
+            temp = zeros((2*bs, t.numchannels), dtype = complex)
+            
+        # allocate array with gridpos-specific averaging number
+        grid_num_blocks = zeros((self.numchannels,),dtype=int)
+        # allocate array fpr spectra results
+        powspec = zeros((numfreq, self.numchannels))#, dtype=self.precision)
+        pos = bs
+        posinc = bs/self.overlap_
+        
+        # duration of on block of length "bs" divided by overlap
+        dt = 1/t.sample_freq * posinc
+        # start trajectory at "center" of first block
+        t_start = 1/t.sample_freq * bs/2
+        # define trajectory whose position advances each block
+        trajblock = self.rotraj.traj(t_start, delta_t=dt)
+        
+        ### temporary, for checking and debugging
+        spherical_coords = zeros((3, t.numchannels, self.num_blocks))
+        isc = 0       
+        ### ------------------
+        
+        for data in t.result(bs):
+            ### temporary, for checking and debugging
+            print(f'{isc/self.num_blocks*100:.2f}',end=' | ', flush=True)
+            ### ------------------
+            ns = data.shape[0]
+            temp[bs:bs+ns] = data
+            while pos+bs <= bs+ns:
+                ft = fft_func(temp[int(pos):int(pos+bs)]*wind, None, 0)[:numfreq].astype(self.precision)
+                
+                trajpos = next(trajblock)
+                # relative vector between micgeom and trajectory position
+                xrel = mpos - array(trajpos)[:, newaxis]
+                
+                # get relative spherical coords
+                r = norm(xrel, axis=0)
+                thetas = arccos(xrel[2]/r) # polar angle / latitude (0..180°) 0..pi
+                phis =  arctan2(xrel[1], xrel[0]) # azimuthal angle / longitude (0..360°) 0..2pi
+                
+                ### temp for debugging
+                spherical_coords[0,:,isc] = r
+                spherical_coords[1,:,isc] = thetas
+                spherical_coords[2,:,isc] = phis
+                isc += 1
+                ### ------------------
+                
+                # loop through mics and look to which grid portion spectra belong
+                for ichannel, (theta, phi) in enumerate(zip(thetas, phis)):
+                    ispec = ft[:,ichannel]
+                    grid_index = self.grid.index(theta, phi)
+                    powspec[:, grid_index] += (ispec*ispec.conjugate()).real
+                    grid_num_blocks[grid_index] += 1
+                
+                pos += posinc
+            temp[0:bs] = temp[bs:]
+            pos -= bs
+        
+        # onesided spectrum: multiplication by 2.0=sqrt(2)^2
+        powspec *= (2.0/self.block_size/weight/grid_num_blocks[newaxis,:])
+        
+        ### temp for debugging
+        self._sph_coords = spherical_coords
+        self._grid_num_blocks = grid_num_blocks # may be kept later on?
+        ### ------------------
+        
+        return powspec
+    
+    
+
 
 
 
