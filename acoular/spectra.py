@@ -88,7 +88,7 @@ class Spectra (HasPrivateTraits):
     #: eigenvectors, corresponding to numpy dtypes. Default is 64 bit.
     # precision = Trait('complex128', 'complex64', 
     #                   desc="precision csm, eva, eve")
-    precision = Trait('complex128', 'complex64', 
+    precision = Trait('complex128',{'complex128':'float64', 'complex64':'float32'}, 
                       desc="precision spectrum")
     
 
@@ -97,7 +97,16 @@ class Spectra (HasPrivateTraits):
         depends_on = ['time_data.digest', 'block_size', 
             'window', 'overlap', 'precision'], 
         )
-
+    
+    
+    # hdf5 cache file
+    h5f = Instance( H5CacheFileBase, transient = True )
+    
+    #: Name of the cache file without extension, readonly.
+    basename = Property( depends_on = 'time_data.digest', 
+        desc="basename for cache file")
+    
+    
     #: The auto power spectrum, 
     #: (number of frequencies, numchannels) array of float;
     #: readonly.
@@ -139,9 +148,9 @@ class Spectra (HasPrivateTraits):
             temp = empty((2*bs, t.numchannels))
         else:
             fft_func = fft.fft
-            temp = empty((2*bs, t.numchannels), dtype = complex)
+            temp = empty((2*bs, t.numchannels), dtype = self.precision)
             
-        powspec = zeros((numfreq,t.numchannels))#, dtype=self.precision)
+        powspec = zeros((numfreq,t.numchannels), dtype=self.precision_)
         pos = bs
         posinc = bs/self.overlap_
         for data in t.result(bs):
@@ -167,13 +176,51 @@ class Spectra (HasPrivateTraits):
         calculated and then additionally stored into cache.
         """
         #self._handle_dual_calibration()
-        #if (
-        #        config.global_caching == 'none' or 
-        #        (config.global_caching == 'individual' and self.cached == False)
-        #    ):
-        return self.calc_power_spectrum()
-        #else:
-        #    return self._get_filecache('aps')
+        if (
+                config.global_caching == 'none' or 
+                (config.global_caching == 'individual' and self.cached == False)
+            ):
+            return self.calc_power_spectrum()
+        else:
+            return self._get_filecache('aps')
+
+
+    def _get_filecache( self, traitname ):
+        """
+        function handles result caching of csm, eigenvectors and eigenvalues
+        calculation depending on global/local caching behaviour.  
+        """
+        if traitname == 'aps':
+            func = self.calc_power_spectrum
+            numfreq = int(self.block_size/2 + 1)
+            shape = (numfreq, self.numchannels)
+            precision = self.precision_
+        else:
+            raise NotImplementedError('Only auto-power spectrum supported.')
+
+        H5cache.get_cache_file( self, self.basename ) 
+        if not self.h5f: # in case of global caching readonly
+            return func() 
+
+        nodename = traitname + '_' + self.digest 
+        if config.global_caching == 'overwrite' and self.h5f.is_cached(nodename):
+            #print("remove existing node",nodename)
+            self.h5f.remove_data(nodename) # remove old data before writing in overwrite mode
+        
+        if not self.h5f.is_cached(nodename): 
+            if config.global_caching == 'readonly': 
+                return func()
+#            print("create array, data not cached for",nodename)
+            self.h5f.create_compressible_array(nodename,shape,precision)
+            
+        ac = self.h5f.get_data_by_reference(nodename)
+        if ac[:].sum() == 0: # only initialized
+#            print("write {} to:".format(traitname),nodename)
+            ac[:] = func()
+            self.h5f.flush()
+        return ac
+
+
 
 
     def fftfreq ( self ):
@@ -224,6 +271,19 @@ class CollectGridTrajSpectra(Spectra):
     ### ------------------
     
     
+    # internal identifier
+    digest = Property( 
+        depends_on = ['time_data.digest', 'block_size', 
+            'window', 'overlap', 'precision', 'trajectory.digest',
+            'mics.digest', 'grid.digest'], 
+        )
+
+    @cached_property
+    def _get_digest( self ):
+        return digest( self )
+    
+    
+    
     def _get_numchannels(self):
         return self.grid.size
     
@@ -256,7 +316,6 @@ class CollectGridTrajSpectra(Spectra):
         
         # rotation matrix
         rot = self.rotation
-        
         # initialize rotated trajectory
         #rotraj = Trajectory()
         for key in self.trajectory.points.keys():
@@ -276,15 +335,15 @@ class CollectGridTrajSpectra(Spectra):
         # use faster rfft if input is real, otherwise full fft
         if isrealobj(next(t.result(1))):
             fft_func = fft.rfft
-            temp = zeros((2*bs, t.numchannels))
+            temp = zeros((2*bs, t.numchannels), dtype=self.precision_)
         else:
             fft_func = fft.fft
-            temp = zeros((2*bs, t.numchannels), dtype = complex)
+            temp = zeros((2*bs, t.numchannels), dtype=self.precision)
             
         # allocate array with gridpos-specific averaging number
         grid_num_blocks = zeros((self.numchannels,),dtype=int)
         # allocate array fpr spectra results
-        powspec = zeros((numfreq, self.numchannels))#, dtype=self.precision)
+        powspec = zeros((numfreq, self.numchannels), dtype=self.precision_)
         pos = bs
         posinc = bs/self.overlap_
         
@@ -328,10 +387,10 @@ class CollectGridTrajSpectra(Spectra):
                 # loop through mics and look to which grid portion spectra belong
                 for ichannel, (theta, phi) in enumerate(zip(thetas, phis)):
                     ispec = ft[:,ichannel]
-                    grid_index = self.grid.index(theta, phi)
+                    grid_index = self.grid.index(phi, theta)
                     powspec[:, grid_index] += (ispec*ispec.conjugate()).real
                     grid_num_blocks[grid_index] += 1
-                
+                #print(f'<{grid_index}> {phi:.1f} {theta:.1f}',end=' -- ', flush=True)                
                 pos += posinc
             temp[0:bs] = temp[bs:]
             pos -= bs

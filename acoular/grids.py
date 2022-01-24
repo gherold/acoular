@@ -911,6 +911,15 @@ class LatLongSphereGrid ( Grid ):
     num_long = Int(1,
         desc="number of longitudes")
 
+
+    digest = Property(
+    depends_on = ['r', 'num_lat', 'num_long', '__class__']
+    )
+    
+    @cached_property
+    def _get_digest( self ):
+        return digest( self )
+
     @property_depends_on('num_lat, num_long')
     def _get_size ( self ):
         return self.num_lat*self.num_long
@@ -918,7 +927,7 @@ class LatLongSphereGrid ( Grid ):
 
     @property_depends_on('num_lat, num_long')
     def _get_shape ( self ):
-        return (self.num_lat, self.num_long)
+        return (self.num_long, self.num_lat)
 
     #: Grid positions as (2, :attr:`size`) array of floats, without invalid
     #: microphones; readonly.
@@ -933,19 +942,19 @@ class LatLongSphereGrid ( Grid ):
         theta, thetastep = linspace(0, pi, self.num_lat, endpoint=False, retstep=True)
         # start line at 0 meridian, point is offset by 1/2 step
         phi, phistep  = linspace(0, 2*pi, self.num_long, endpoint=False, retstep=True)
-        return reshape(meshgrid(theta+thetastep/2, phi+phistep/2),(2,self.size))
+        return reshape(meshgrid(phi+phistep/2,theta+thetastep/2),(2,self.size),order='F')
     
     
     @property_depends_on('num_lat, num_long')
     def _get_gpos( self ):
-        theta = self.angles[0]
-        phi = self.angles[1]
+        theta = self.angles[1]
+        phi = self.angles[0]
         return array([self.r*cos(phi)*sin(theta),
                       self.r*sin(phi)*sin(theta),
                       -self.r*cos(theta)])
     
     
-    def index ( self, theta, phi):
+    def index ( self, phi, theta):
         """
         Queries the indices for a grid point near a certain co-ordinate.
 
@@ -954,7 +963,7 @@ class LatLongSphereGrid ( Grid ):
         
         Parameters
         ----------
-        theta, phi : float
+        phi, theta : float
             The co-ordinates for which the indices are queried.
 
         Returns
@@ -967,10 +976,11 @@ class LatLongSphereGrid ( Grid ):
         thetastep = pi/self.num_lat
         phistep = 2*pi/self.num_long
         
-        thetai = int((theta%pi)/thetastep)
+        thetai = min(int(theta/thetastep),self.num_lat-1)
+        
         phii = int((phi%(2*pi))/phistep)
         
-        return ravel_multi_index((thetai,phii), self.shape)
+        return ravel_multi_index((phii,thetai), self.shape)
 
     def _get_extent(self):
         return (0,2*pi,0,pi)
@@ -982,6 +992,17 @@ class EqualSphereGrid (LatLongSphereGrid):
     #: This will directly influence the overall tesselation of the sphere.
     num_long = Int(8,
         desc="number of longitudes")
+
+
+
+
+    digest = Property(
+    depends_on = ['r', 'num_long', '__class__']
+    )
+    
+    @cached_property
+    def _get_digest( self ):
+        return digest( self )
 
 
     _calc_flag = Bool(False)
@@ -1012,19 +1033,16 @@ class EqualSphereGrid (LatLongSphereGrid):
         self.phisteps = zeros((5,))
         
         angs = zeros((2, self.size))
-        angs[0,-1] = pi
+        angs[1,-1] = pi
         ind = 1
         inner_thetas = (array(self._theta_borders)[1:]+array(self._theta_borders)[:-1])/2
         for iphi,(nl,theta) in enumerate(zip(nlongs[1:-1],inner_thetas)):
             phis, phistep = linspace(0,2*pi,nl,endpoint=False, retstep=True)
             self.phisteps[iphi+1] = phistep
-            angs[0,ind:ind+nl] = ones((nl,)) * theta
-            angs[1,ind:ind+nl] = phis
+            angs[0,ind:ind+nl] = phis
+            angs[1,ind:ind+nl] = ones((nl,)) * theta
             ind+=nl
         self._angs = angs        
-      
-        
-        
         self._calc_flag = True
     
     @property_depends_on('num_long')
@@ -1045,7 +1063,7 @@ class EqualSphereGrid (LatLongSphereGrid):
         
             
             
-    def index ( self, theta, phi):
+    def index ( self, phi, theta):
          """
          Queries the indices for a grid point near a certain co-ordinate.
 
@@ -1054,7 +1072,7 @@ class EqualSphereGrid (LatLongSphereGrid):
          
          Parameters
          ----------
-         theta, phi : float
+         phi, theta : float
              The co-ordinates for which the indices are queried.
 
          Returns
@@ -1064,10 +1082,11 @@ class EqualSphereGrid (LatLongSphereGrid):
              The indices that give the grid point nearest to the given theta, phi
              co-ordinates from an array with the same shape as the grid.            
          """
-         ind1 = searchsorted(array([0]+self._theta_borders),theta,side="right")
+         ind1 = searchsorted(array([0]+self.theta_borders),theta,side="right")
          if 0<ind1<4:
              #ind2 = int(phi/self.phisteps[ind1]-0.5)
-             ind2 = int( ((phi-self.phisteps[ind1]/2)%(2*pi))/self.phisteps[ind1]) 
+             ind2 = int( ((phi+self.phisteps[ind1]/2)%(2*pi))/self.phisteps[ind1]) 
+             #ind2 = int( ((phi-phistep/2)%(2*pi))/phistep) 
 
              #print(ind1,ind2,phi,self.phisteps)
          else:
