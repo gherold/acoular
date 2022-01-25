@@ -631,7 +631,13 @@ class DedopplerTimeTraj(BeamformerTimeTraj):
             fdtype = float32
         result = empty((num, self.numchannels), dtype=fdtype) # output array
         autopow = empty((num, self.numchannels), dtype=fdtype) # output array
-        _delayandnothing5(p_res, d_index[:,0,:], d_interp2[:,0,:], amp[:,0,:], result, autopow)
+        # make sure to use steer_type='inverse' and ref=1 for steer
+        _delayandnothing5(p_res, 
+                          d_index[:,0,:], 
+                          d_interp2[:,0,:], 
+                          amp[:,0,:] * self.numchannels, # correct for steering vector
+                          result, 
+                          autopow)
         #result[:,0]+=result[:,1]
         #result[:,1]=result[:,0]
         return result, autopow    

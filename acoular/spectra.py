@@ -369,7 +369,7 @@ class CollectGridTrajSpectra(Spectra):
                 ft = fft_func(temp[int(pos):int(pos+bs)]*wind, None, 0)[:numfreq].astype(self.precision)
                 
                 trajpos = next(trajblock)
-                # relative vector between micgeom and trajectory position
+                # relative vector, from trajectory position to mics
                 xrel = mpos - array(trajpos)[:, newaxis]
                 
                 # get relative spherical coords
