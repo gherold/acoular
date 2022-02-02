@@ -73,6 +73,7 @@ if is_tables:
         'float64' : tables.Float64Atom(),
         'complex128' : tables.ComplexAtom(16),
         'bool' : tables.BoolAtom(),
+        'uint32': tables.UInt32Atom(),
         'int32' : tables.Int32Atom(),
         'int16' : tables.Int16Atom(),
         'int8' : tables.Int8Atom(),        

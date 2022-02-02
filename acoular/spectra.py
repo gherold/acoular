@@ -15,7 +15,7 @@
 from warnings import warn
 
 from numpy import array, ones, hanning, hamming, bartlett, blackman, \
-dot, newaxis, zeros, empty, fft, linalg, isrealobj, absolute, diag, \
+dot, newaxis, zeros, empty, fft, linalg, isrealobj, absolute, diag, uint32, \
 searchsorted, isscalar, fill_diagonal, arange, zeros_like, sum, arccos, arctan2
 from numpy.linalg import norm
 from traits.api import HasPrivateTraits, Int, Property, Instance, Trait, \
@@ -71,7 +71,8 @@ class Spectra (HasPrivateTraits):
         desc="type of window for FFT")
 
     #: Overlap factor for averaging: 'None'(default), '50%', '75%', '87.5%'.
-    overlap = Trait('None', {'None':1, '50%':2, '75%':4, '87.5%':8}, 
+    overlap = Trait('None', {'None':1, '50%':2, '75%':4, '87.5%':8, 
+                             '93.75%': 16, '97%':32 }, 
         desc="overlap of FFT blocks")
         
     #: Flag, if true (default), the result is cached in h5 files and need not
@@ -269,7 +270,13 @@ class CollectGridTrajSpectra(Spectra):
     _sph_coords = CArray()
     _grid_num_blocks = CArray()
     ### ------------------
-    
+
+
+    #: The auto power spectrum, 
+    #: (number of frequencies, numchannels) array of float;
+    #: readonly.
+    blocks_per_grid  = Property( 
+                    desc="number of blocks per grid point")    
     
     # internal identifier
     digest = Property( 
@@ -283,9 +290,25 @@ class CollectGridTrajSpectra(Spectra):
         return digest( self )
     
     
-    
     def _get_numchannels(self):
         return self.grid.size
+    
+    
+    @property_depends_on('digest')
+    def _get_blocks_per_grid ( self ):
+        """
+
+        """
+        #self._handle_dual_calibration()
+        if (
+                config.global_caching == 'none' or 
+                (config.global_caching == 'individual' and self.cached == False)
+            ):
+            # trigger calculation
+            return self.calc_grid_num_blocks()
+        else:
+            return self._get_filecache('blocks_per_grid')
+    
     
     
     @cached_property
@@ -310,6 +333,12 @@ class CollectGridTrajSpectra(Spectra):
                         [-sin_alpha, 0, cos_alpha]])
         
         return Ry_neg
+    
+    def calc_grid_num_blocks( self ):
+        # trigger calculation if necessary
+        if self._grid_num_blocks[:].sum()==0:
+            self.calc_power_spectrum()
+        return self._grid_num_blocks
     
     def calc_power_spectrum( self ):
         """ power spectrum calculation """
@@ -341,7 +370,7 @@ class CollectGridTrajSpectra(Spectra):
             temp = zeros((2*bs, t.numchannels), dtype=self.precision)
             
         # allocate array with gridpos-specific averaging number
-        grid_num_blocks = zeros((self.numchannels,),dtype=int)
+        grid_num_blocks = zeros((self.numchannels,),dtype=uint32)
         # allocate array fpr spectra results
         powspec = zeros((numfreq, self.numchannels), dtype=self.precision_)
         pos = bs
@@ -406,7 +435,45 @@ class CollectGridTrajSpectra(Spectra):
         return powspec
     
     
+    def _get_filecache( self, traitname ):
+        """
+        function handles result caching of csm, eigenvectors and eigenvalues
+        calculation depending on global/local caching behaviour.  
+        """
+        if traitname == 'aps':
+            func = self.calc_power_spectrum
+            numfreq = int(self.block_size/2 + 1)
+            shape = (numfreq, self.numchannels)
+            precision = self.precision_
+        elif traitname == 'blocks_per_grid':
+            func = self.calc_grid_num_blocks
+            numfreq = int(self.block_size/2 + 1)
+            shape = (self.numchannels,)
+            precision = 'uint32'
+        else:
+            raise NotImplementedError('Only auto-power spectrum and number of blocks supported.')
 
+        H5cache.get_cache_file( self, self.basename ) 
+        if not self.h5f: # in case of global caching readonly
+            return func() 
+
+        nodename = traitname + '_' + self.digest 
+        if config.global_caching == 'overwrite' and self.h5f.is_cached(nodename):
+            #print("remove existing node",nodename)
+            self.h5f.remove_data(nodename) # remove old data before writing in overwrite mode
+        
+        if not self.h5f.is_cached(nodename): 
+            if config.global_caching == 'readonly': 
+                return func()
+#            print("create array, data not cached for",nodename)
+            self.h5f.create_compressible_array(nodename,shape,precision)
+            
+        ac = self.h5f.get_data_by_reference(nodename)
+        if ac[:].sum() == 0: # only initialized
+#            print("write {} to:".format(traitname),nodename)
+            ac[:] = func()
+            self.h5f.flush()
+        return ac
 
 
 
