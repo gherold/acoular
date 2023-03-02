@@ -250,12 +250,13 @@ class CollectGridTrajSpectra(Spectra):
         desc="trajectory of the grid center")
     
     
-    
+    #: if set to True, ignore first and last pos in traj for rotational orientation
+    z_orientation = Bool(False)
     
     
     #: approximate the trajectory with a straight line and define it as z axis
     #: this will help comparing different trajectories with each other
-    rotation = Property(depends_on = ['trajectory','time_data.digest'])
+    rotation = Property(depends_on = ['trajectory','time_data.digest', 'z_orientation'])
     
     #: :class:`~acoular.microphones.MicGeom` object that provides the microphone locations.
     mics = Trait(MicGeom, 
@@ -313,24 +314,30 @@ class CollectGridTrajSpectra(Spectra):
     
     @cached_property
     def _get_rotation ( self ):
-        t_end = self.time_data.numsamples/self.time_data.sample_freq
-        xstart = array(self.trajectory.location(0))
-        xend = array(self.trajectory.location(t_end))
-        vec = xend - xstart
-
-        # distance in xz plane (y is ignored b/c gravity should orient drone)
-        r_xz = (vec[0]**2 + vec[2]**2)**0.5
-        
-        # get angle alpha
-        sin_alpha = vec[0]/r_xz
-        cos_alpha = -vec[2]/r_xz # minus sign because left-oriented z axis
-
-        
-        # get negative (!) angle rotation matrix for left-oriented system
-        # (negative because we want to rotate the coords in the other direction)
-        Ry_neg = array([[ cos_alpha, 0, sin_alpha],
-                        [         0, 1,         0],
-                        [-sin_alpha, 0, cos_alpha]])
+        if self.z_orientation:
+            Ry_neg = array([[ 1, 0, 0],
+                            [ 0, 1, 0],
+                            [ 0, 0, 1]])
+        else:
+            
+            t_end = self.time_data.numsamples/self.time_data.sample_freq
+            xstart = array(self.trajectory.location(0))
+            xend = array(self.trajectory.location(t_end))
+            vec = xend - xstart
+    
+            # distance in xz plane (y is ignored b/c gravity should orient drone)
+            r_xz = (vec[0]**2 + vec[2]**2)**0.5
+            
+            # get angle alpha
+            sin_alpha = vec[0]/r_xz
+            cos_alpha = -vec[2]/r_xz # minus sign because left-oriented z axis
+    
+            
+            # get negative (!) angle rotation matrix for left-oriented system
+            # (negative because we want to rotate the coords in the other direction)
+            Ry_neg = array([[ cos_alpha, 0, sin_alpha],
+                            [         0, 1,         0],
+                            [-sin_alpha, 0, cos_alpha]])
         
         return Ry_neg
     
