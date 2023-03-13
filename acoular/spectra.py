@@ -14,7 +14,7 @@
 """
 from warnings import warn
 
-from numpy import array, ones, hanning, hamming, bartlett, blackman, \
+from numpy import array, ones, hanning, hamming, bartlett, blackman, nan, \
 dot, newaxis, zeros, empty, fft, linalg, isrealobj, absolute, diag, uint32, \
 searchsorted, isscalar, fill_diagonal, arange, zeros_like, sum, arccos, arctan2
 from numpy.linalg import norm
@@ -273,7 +273,7 @@ class CollectGridTrajSpectra(Spectra):
     ### ------------------
 
 
-    #: The auto power spectrum, 
+    #: The total number of blocks for each grid point 
     #: (number of frequencies, numchannels) array of float;
     #: readonly.
     blocks_per_grid  = Property( 
@@ -481,6 +481,199 @@ class CollectGridTrajSpectra(Spectra):
             ac[:] = func()
             self.h5f.flush()
         return ac
+
+
+
+
+class CollectDetailedGridTrajSpectra(CollectGridTrajSpectra):
+       
+
+    #: ( num_blocks, numchannels, 5)
+    spec_history_per_grid = Property( 
+                    desc="the full spectral history for each grid point")    
+
+
+    #: The total number of blocks for each grid point 
+    #: (number of frequencies, numchannels) array of float;
+    #: readonly.
+    blocks_per_grid  = Property( 
+                    desc="number of blocks per grid point")    
+    
+    
+    
+    @property_depends_on('digest')
+    def _get_spec_history_per_grid ( self ):
+        """
+
+        """
+        #self._handle_dual_calibration()
+        if (
+                config.global_caching == 'none' or 
+                (config.global_caching == 'individual' and self.cached == False)
+            ):
+            # trigger calculation
+            return self.calc_spec_history_per_grid()
+        else:
+            return self._get_filecache('spec_history_per_grid')
+    
+    _history_per_grid = CArray()
+    
+    
+    def calc_spec_history_per_grid( self ):
+        # trigger calculation if necessary
+        if self._history_per_grid[:].sum()==0:
+            self.calc_power_spectrum()
+        return self._history_per_grid
+    
+    def calc_power_spectrum( self ):
+        """ power spectrum calculation """
+        
+        freqs = self.fftfreq()
+        freqinds = array([searchsorted(freqs, freq) for freq in [500,1000,2000,4000,8000]])
+        
+        # rotation matrix
+        rot = self.rotation
+        # initialize rotated trajectory
+        #rotraj = Trajectory()
+        for key in self.trajectory.points.keys():
+            self.rotraj.points[key] = tuple(rot @ self.trajectory.points[key])
+        
+        # get relative orientation of mic geom
+        mpos = rot @ self.mics.mpos    
+        
+        # some abbreviations for spectra calculation
+        t = self.time_data
+        wind = self.window_( self.block_size )
+        weight = dot( wind, wind )
+        wind = wind[newaxis, :].swapaxes( 0, 1 )
+        numfreq = int(self.block_size/2 + 1)
+        bs = self.block_size
+        
+        # use faster rfft if input is real, otherwise full fft
+        if isrealobj(next(t.result(1))):
+            fft_func = fft.rfft
+            temp = zeros((2*bs, t.numchannels), dtype=self.precision_)
+        else:
+            fft_func = fft.fft
+            temp = zeros((2*bs, t.numchannels), dtype=self.precision)
+            
+        # allocate array with gridpos-specific averaging number
+        grid_num_blocks = zeros((self.numchannels,),dtype=uint32)
+        
+        # allocate history array, for 5 representative frequencies (500,1k,2k,4k,8k Hz)
+        history_per_grid = empty((self.num_blocks,self.numchannels,5),dtype=self.precision_)
+        history_per_grid[:] = nan
+        # allocate array fpr spectra results
+        powspec = zeros((numfreq, self.numchannels), dtype=self.precision_)
+        pos = bs
+        posinc = bs/self.overlap_
+        
+        # duration of on block of length "bs" divided by overlap
+        dt = 1/t.sample_freq * posinc
+        # start trajectory at "center" of first block
+        t_start = 1/t.sample_freq * bs/2
+        # define trajectory whose position advances each block
+        trajblock = self.rotraj.traj(t_start, delta_t=dt)
+        
+        ### temporary, for checking and debugging
+        spherical_coords = zeros((3, t.numchannels, self.num_blocks))
+        isc = 0       
+        ### ------------------
+        
+        for data in t.result(bs):
+            ### temporary, for checking and debugging
+            print(f'{isc/self.num_blocks*100:.2f}',end=' | ', flush=True)
+            ### ------------------
+            ns = data.shape[0]
+            temp[bs:bs+ns] = data
+            while pos+bs <= bs+ns:
+                ft = fft_func(temp[int(pos):int(pos+bs)]*wind, None, 0)[:numfreq].astype(self.precision)
+                
+                trajpos = next(trajblock)
+                # relative vector, from trajectory position to mics
+                xrel = mpos - array(trajpos)[:, newaxis]
+                
+                # get relative spherical coords
+                r = norm(xrel, axis=0)
+                thetas = arccos(xrel[2]/r) # polar angle / latitude (0..180°) 0..pi
+                phis =  arctan2(xrel[1], xrel[0]) # azimuthal angle / longitude (0..360°) 0..2pi
+                
+                ### temp for debugging
+                spherical_coords[0,:,isc] = r
+                spherical_coords[1,:,isc] = thetas
+                spherical_coords[2,:,isc] = phis
+                ### ------------------
+                
+                # loop through mics and look to which grid portion spectra belong
+                for ichannel, (theta, phi) in enumerate(zip(thetas, phis)):
+                    ispec = ft[:,ichannel]
+                    grid_index = self.grid.index(phi, theta)
+                    localspec = (ispec*ispec.conjugate()).real
+                    powspec[:, grid_index] += localspec
+                    grid_num_blocks[grid_index] += 1
+                    history_per_grid[isc, grid_index] = localspec[freqinds]
+                #print(f'<{grid_index}> {phi:.1f} {theta:.1f}',end=' -- ', flush=True)                
+                isc += 1
+                pos += posinc
+            temp[0:bs] = temp[bs:]
+            pos -= bs
+        
+        # onesided spectrum: multiplication by 2.0=sqrt(2)^2
+        powspec *= (2.0/self.block_size/weight/grid_num_blocks[newaxis,:])
+        
+        ### temp for debugging
+        self._sph_coords = spherical_coords
+        self._grid_num_blocks = grid_num_blocks # may be kept later on?
+        self._history_per_grid = history_per_grid
+        ### ------------------
+        
+        return powspec
+    
+    
+    def _get_filecache( self, traitname ):
+        """
+        function handles result caching of csm, eigenvectors and eigenvalues
+        calculation depending on global/local caching behaviour.  
+        """
+        if traitname == 'aps':
+            func = self.calc_power_spectrum
+            numfreq = int(self.block_size/2 + 1)
+            shape = (numfreq, self.numchannels)
+            precision = self.precision_
+        elif traitname == 'blocks_per_grid':
+            func = self.calc_grid_num_blocks
+            shape = (self.numchannels,)
+            precision = 'uint32'
+        elif traitname == 'spec_history_per_grid':
+            func = self.calc_spec_history_per_grid
+            shape = (self.num_blocks,self.numchannels,5)
+            precision = self.precision_
+        else:
+            raise NotImplementedError('Only auto-power spectrum and number of blocks supported.')
+
+        H5cache.get_cache_file( self, self.basename ) 
+        if not self.h5f: # in case of global caching readonly
+            return func() 
+
+        nodename = traitname + '_' + self.digest 
+        if config.global_caching == 'overwrite' and self.h5f.is_cached(nodename):
+            #print("remove existing node",nodename)
+            self.h5f.remove_data(nodename) # remove old data before writing in overwrite mode
+        
+        if not self.h5f.is_cached(nodename): 
+            if config.global_caching == 'readonly': 
+                return func()
+#            print("create array, data not cached for",nodename)
+            self.h5f.create_compressible_array(nodename,shape,precision)
+            
+        ac = self.h5f.get_data_by_reference(nodename)
+        if ac[:].sum() == 0: # only initialized
+#            print("write {} to:".format(traitname),nodename)
+            ac[:] = func()
+            self.h5f.flush()
+        return ac
+
+
 
 
 

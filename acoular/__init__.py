@@ -50,7 +50,7 @@ from .environments import cartToCyl, cylToCart, Environment, UniformFlowEnvironm
 FlowField, OpenJet, SlotJet, GeneralFlowEnvironment
 from .microphones import MicGeom
 from .spectra import Spectra, PowerSpectra, PowerSpectra as EigSpectra, synthetic,\
-    CollectGridTrajSpectra
+    CollectGridTrajSpectra, CollectDetailedGridTrajSpectra
 
 from .fbeamform import BeamformerBase, BeamformerCapon, BeamformerEig, \
 BeamformerMusic, BeamformerDamas, BeamformerDamasPlus, BeamformerOrth,BeamformerCleansc, \
