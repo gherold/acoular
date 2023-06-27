@@ -568,21 +568,21 @@ class RectGrid3D( RectGrid):
     def _get_shape ( self ):
         return (self.nxsteps, self.nysteps, self.nzsteps)
     
-    @property_depends_on('x_min, x_max, increment3D')
+    @property_depends_on('x_min, x_max, _increment')
     def _get_nxsteps ( self ):
         i = abs(self.increment3D[0])
         if i != 0:
             return int(round((abs(self.x_max-self.x_min)+i)/i))
         return 1
 
-    @property_depends_on('y_min, y_max, increment3D')
+    @property_depends_on('y_min, y_max, _increment')
     def _get_nysteps ( self ):
         i = abs(self.increment3D[1])
         if i != 0:
             return int(round((abs(self.y_max-self.y_min)+i)/i))
         return 1
         
-    @property_depends_on('z_min, z_max, increment3D')
+    @property_depends_on('z_min, z_max, _increment')
     def _get_nzsteps ( self ):
         i = abs(self.increment3D[2])
         if i != 0:
