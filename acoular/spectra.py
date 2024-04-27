@@ -335,9 +335,19 @@ class CollectGridTrajSpectra(Spectra):
             
             # get negative (!) angle rotation matrix for left-oriented system
             # (negative because we want to rotate the coords in the other direction)
-            Ry_neg = array([[ cos_alpha, 0, sin_alpha],
+            Ry_RAR = array([[ cos_alpha, 0, sin_alpha],
                             [         0, 1,         0],
-                            [-sin_alpha, 0, cos_alpha]])
+                            [-sin_alpha, 0, cos_alpha]])# MicGeom-Setup im RAR
+            Ry_Wes = array([[-sin_alpha, cos_alpha, 0],
+                            [        0,         0,-1],
+                            [cos_alpha,-sin_alpha, 0]])# MicGeomSetup in Wesendorf
+            Ry_Wes = array([[0,1, 0],
+                            [0, 0,-1],
+                            [1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für AIAA)
+            Ry_Weo = array([[0,-1, 0],
+                            [0, 0,-1],
+                            [-1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für DAGA, wenn unten auch unverändert)
+            Ry_neg = Ry_Wes
         
         return Ry_neg
     
@@ -355,10 +365,12 @@ class CollectGridTrajSpectra(Spectra):
         # initialize rotated trajectory
         #rotraj = Trajectory()
         for key in self.trajectory.points.keys():
-            self.rotraj.points[key] = tuple(rot @ self.trajectory.points[key])
+            self.rotraj.points[key] = tuple(rot @ self.trajectory.points[key])#changed because coord system changed
+            #self.rotraj.points[key] = tuple(self.trajectory.points[key])
         
         # get relative orientation of mic geom
-        mpos = rot @ self.mics.mpos    
+        mpos = rot @ self.mics.mpos    #changed because coord system changed
+        #mpos = self.mics.mpos    
         
         # some abbreviations for spectra calculation
         t = self.time_data
@@ -412,6 +424,9 @@ class CollectGridTrajSpectra(Spectra):
                 r = norm(xrel, axis=0)
                 thetas = arccos(xrel[2]/r) # polar angle / latitude (0..180°) 0..pi
                 phis =  arctan2(xrel[1], xrel[0]) # azimuthal angle / longitude (0..360°) 0..2pi
+                #thetas = arccos(-xrel[0]/r) # polar angle / latitude (0..180°) 0..pi
+                #phis =  arctan2(-xrel[2], -xrel[1]) # azimuthal angle / longitude (0..360°) 0..2pi
+                
                 
                 ### temp for debugging
                 spherical_coords[0,:,isc] = r
