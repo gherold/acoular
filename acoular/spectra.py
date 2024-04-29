@@ -325,12 +325,17 @@ class CollectGridTrajSpectra(Spectra):
             xend = array(self.trajectory.location(t_end))
             vec = xend - xstart
     
-            # distance in xz plane (y is ignored b/c gravity should orient drone)
-            r_xz = (vec[0]**2 + vec[2]**2)**0.5
+            # distance in xz plane (y is ignored b/c gravity should orient drone), RAR
+            #r_xz = (vec[0]**2 + vec[2]**2)**0.5     #xz plane, RAR
             
+            # distance in plane parallel to ground, Wesendorf: dim 0, 1 (xy)
+            rtraj = (vec[0]**2 + vec[1]**2)**0.5 
+
+
             # get angle alpha
-            sin_alpha = vec[0]/r_xz
-            cos_alpha = -vec[2]/r_xz # minus sign because left-oriented z axis
+            sin_alpha = vec[0]/rtraj
+            cos_alpha = vec[1]/rtraj
+            #cos_alpha = -vec[2]/r_xz # minus sign because left-oriented z axis
     
             
             # get negative (!) angle rotation matrix for left-oriented system
@@ -338,15 +343,17 @@ class CollectGridTrajSpectra(Spectra):
             Ry_RAR = array([[ cos_alpha, 0, sin_alpha],
                             [         0, 1,         0],
                             [-sin_alpha, 0, cos_alpha]])# MicGeom-Setup im RAR
-            Ry_Wes = array([[-sin_alpha, cos_alpha, 0],
-                            [        0,         0,-1],
-                            [cos_alpha,-sin_alpha, 0]])# MicGeomSetup in Wesendorf
-            Ry_Wes = array([[0,1, 0],
-                            [0, 0,-1],
-                            [1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für AIAA)
-            Ry_Weo = array([[0,-1, 0],
-                            [0, 0,-1],
-                            [-1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für DAGA, wenn unten auch unverändert)
+            
+            Ry_Wes = array([[-cos_alpha, sin_alpha,  0],
+                            [         0,         0, -1],
+                            [ sin_alpha, cos_alpha,  0]])# MicGeomSetup in Wesendorf
+            
+            Ry_WesAIAA = array([[ 0, 1, 0],
+                                [ 0, 0,-1],
+                                [ 1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für AIAA, Ri "Zurück")
+            Ry_WesDAGA = array([[ 0,-1, 0],
+                                [ 0, 0,-1],
+                                [-1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für DAGA, Ri "Hin", wenn unten auch unverändert)
             Ry_neg = Ry_Wes
         
         return Ry_neg
