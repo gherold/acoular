@@ -7,7 +7,7 @@
     :toctree: generated/
 
     MaskedTimeOut
-    Trigger
+    TriggerLegacy
     AngleTracker
     ChannelMixer
     SpatialInterpolator
@@ -292,7 +292,7 @@ class ChannelMixer(TimeOut):
             yield sum(weights * block, 1, keepdims=True)
 
 
-class Trigger(TimeOut):
+class TriggerLegacy(TimeOut):
     """Class for identifying trigger signals.
     Gets samples from :attr:`source` and stores the trigger samples in :meth:`trigger_data`.
 
@@ -495,7 +495,7 @@ class AngleTracker(MaskedTimeOut):
     """
 
     #: Trigger data from :class:`acoular.tprocess.Trigger`.
-    trigger = Instance(Trigger)
+    trigger = Instance(TriggerLegacy)
 
     # internal identifier
     digest = Property(

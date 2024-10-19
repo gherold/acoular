@@ -9,7 +9,7 @@ import os  # noqa: I001
 # config must be imported before any submodules containing numpy, see #322.
 from .configuration import config
 
-from . import demo, tools, rotating
+from . import demo, tools
 from .base import (
     Generator,
     InOut,
@@ -70,6 +70,40 @@ from .grids import (
 )
 from .microphones import MicGeom
 from .process import Average, Cache, SampleSplitter, TimeAverage, TimeCache
+
+# import new stuff from rotating
+from .rotating import (
+    AxialRotatingFlowEnvironment, 
+    EnvironmentRot,
+    EnvironmentRotFlow,
+    SteeringVectorInduct,
+    SteeringVectorModeTransformer,
+    CircGrid, 
+    CircMesh, 
+    EqCircGrid, 
+    EqCircGrid3D, 
+    GridMesh,
+    EnvironmentRot, 
+    EnvironmentRotFlow,
+    MicGeomCirc, 
+    MicRing,
+    AngleTrajectory,
+    Trigger, 
+    FeatureTrigger,
+    SpaceModesTransformer,
+    VirtualRotator,
+    VirtualRotatorAngle,
+    VirtualRotatorModal,
+    VirtualRotatorSpatial,
+    RotationalSpeedDetector,
+    RotationalSpeedDetector2,
+    RotationalSpeedDetector3,
+    RotationalSpeed,
+    AngleTrajectory,
+    TrajectoryAnglesFromTrigger,
+)
+
+
 from .sdinput import SoundDeviceSamplesGenerator
 from .signals import (
     FiltWNoiseGenerator,
@@ -126,7 +160,7 @@ from .tprocess import (
     TimeExpAverage,
     TimePower,
     TimeReverse,
-    Trigger,
+    TriggerLegacy,
     WriteH5,
     WriteWAV,
 )
