@@ -25,6 +25,7 @@ from numpy import (
     hamming,
     hanning,
     imag,
+    isrealobj,
     isscalar,
     linalg,
     ndarray,
@@ -127,10 +128,22 @@ class BaseSpectra(HasPrivateTraits):
             return abs(fft.fftfreq(self.block_size, 1.0 / self.source.sample_freq)[: int(self.block_size / 2 + 1)])
         return None
 
+    #: --------------------------------
+    # TODO: This has done by checking source.dtype or so in the future
+    _source_isreal = Property(desc='check if source is real')
+    
+    @cached_property
+    def _get_source_isreal(self):
+        return isrealobj(next(self.source.result(1)))
+    #  --------------------------------
+
     # generator that yields the time data blocks for every channel (with optional overlap)
     def _get_source_data(self):
         bs = self.block_size
-        temp = empty((2 * bs, self.numchannels))
+        if self._source_isreal:
+            temp = empty((2 * bs, self.numchannels))
+        else:
+            temp = empty((2 * bs, self.numchannels), dtype=complex)
         pos = bs
         posinc = bs / self.overlap_
         for data_block in self.source.result(bs):
@@ -356,6 +369,7 @@ class PowerSpectra(BaseSpectra):
             return self._source.basename
         return self._source.__class__.__name__ + self._source.digest
 
+
     def calc_csm(self):
         """Csm calculation."""
         t = self.source
@@ -373,9 +387,16 @@ class PowerSpectra(BaseSpectra):
             else:
                 raise ValueError('Calibration data not compatible: %i, %i' % (self.calib.num_mics, t.numchannels))
         # get time data blockwise
+        # use faster rfft if input is real, otherwise full fft
+        if self._source_isreal:
+            fft_func = fft.rfft
+        else:
+            fft_func = fft.fft
+
         for data in self._get_source_data():
-            ft = fft.rfft(data * wind, None, 0).astype(self.precision)
+            ft = fft_func(data * wind, None, 0).astype(self.precision)
             calcCSM(csm_upper, ft)  # only upper triangular part of matrix is calculated (for speed reasons)
+        
         # create the full csm matrix via transposing and complex conj.
         csm_lower = csm_upper.conj().transpose(0, 2, 1)
         [fill_diagonal(csm_lower[cntFreq, :, :], 0) for cntFreq in range(csm_lower.shape[0])]
