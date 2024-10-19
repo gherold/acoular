@@ -41,9 +41,6 @@ from .microphones import (
 from .spectra import PowerSpectraDR
 
 from .tprocess import (
-    AngleTrajectory,
-    Trigger, 
-    FeatureTrigger,
     SpaceModesTransformer,
     VirtualRotator,
     VirtualRotatorAngle,
@@ -58,4 +55,9 @@ from .tprocess import (
 from.trajectory import (
     AngleTrajectory,
     TrajectoryAnglesFromTrigger,
+)
+
+from .trigger import (
+    Trigger, 
+    FeatureTrigger,
 )

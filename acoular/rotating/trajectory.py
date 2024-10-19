@@ -13,12 +13,13 @@ Classes dealing with rotating systems.
 from numpy import array, empty, median, sign, size, where, pi
 from scipy.interpolate import splev, splrep
 from traits.api import (Bool, Dict, Float, Int, Property, Trait, Tuple,
-                        cached_property, on_trait_change)
+                        cached_property, on_trait_change, Instance)
 
 from acoular.internal import digest
-from acoular.trajectory import SamplesGenerator, Trajectory
+from acoular.base import SamplesGenerator
+from acoular.trajectory import Trajectory
 
-from .tprocess import Trigger
+from .trigger import Trigger
 
 
 class AngleTrajectory ( Trajectory ):
@@ -29,23 +30,15 @@ class AngleTrajectory ( Trajectory ):
     Does spline interpolation of angles between samples.
     """
     
-    #: Data source (:class:`~acoular.sources.SamplesGenerator` object with 
+    #: Data source (:class:`~acoular.base.SamplesGenerator` object with 
     #: trigger signal).
-    source = Trait(SamplesGenerator)
+    source = Instance(SamplesGenerator)
     
     #: Dictionary that assigns discrete time instants (keys) to 
     #: sampled angles along the trajectory (values)
     points = Dict(key_trait = Float, value_trait = Float, 
         desc = "sampled angles along the trajectory")
     
-    # traits_view = View(
-    #     [Item('points', style='custom')
-    #     ], 
-    #     title='Trajectory angles', 
-    #     buttons = OKCancelButtons
-    #     )    
-    
-
     # internal identifier
     digest = Property( 
         depends_on = ['source.digest', 
@@ -307,9 +300,6 @@ class AngleTrajectory ( Trajectory ):
         """
 
         return (splev(t, self.tck, der)*self.factor) % 360.0
-
-
-
 
 
 #TODO: Re-implement this in a clean way
