@@ -494,7 +494,7 @@ class AngleTracker(MaskedTimeOut):
 
     """
 
-    #: Trigger data from :class:`acoular.tprocess.Trigger`.
+    #: Trigger data from :class:`acoular.tprocess.TriggerLegacy`.
     trigger = Instance(TriggerLegacy)
 
     # internal identifier
@@ -562,7 +562,7 @@ class AngleTracker(MaskedTimeOut):
         # init
         ind = 0
         # trigger data
-        peakloc, maxdist, mindist = self.trigger.trigger_data()
+        peakloc, maxdist, mindist = self.trigger.trigger_data
         TriggerPerRevo = self.trigger_per_revo
         rotDirection = self.rot_direction
         num = self.source.numsamples
