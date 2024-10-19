@@ -1173,7 +1173,7 @@ class SpatialInterpolatorRotation(SpatialInterpolator):
         # period for rotation
         period = 2 * pi
         # get angle
-        angle = self.angle_source.angle()
+        angle = self.angle_source.angle
         # counter to track angle position in time for each block
         count = 0
         for timeData in self.source.result(num):

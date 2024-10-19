@@ -130,7 +130,7 @@ class BaseSpectra(HasPrivateTraits):
 
     #: --------------------------------
     # TODO: This has done by checking source.dtype or so in the future
-    _source_isreal = Property(desc='check if source is real')
+    source_isreal = Property(desc='check if source is real')
     
     @cached_property
     def _get_source_isreal(self):

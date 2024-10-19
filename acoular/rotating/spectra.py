@@ -15,12 +15,9 @@
 """
 from warnings import warn
 
-from numpy import array, ones, hanning, hamming, bartlett, blackman, \
-dot, newaxis, zeros, empty, fft, linalg, isrealobj, absolute, diag, \
-searchsorted, isscalar, fill_diagonal, arange, zeros_like, sum
-from traits.api import HasPrivateTraits, Int, Property, Instance, Trait, \
-Range, Bool, cached_property, property_depends_on, Delegate, Float
-
+from numpy import (absolute, arange, array, diag, isscalar, newaxis,
+                   searchsorted, sum, zeros_like)
+from traits.api import Int, Property, cached_property, property_depends_on
 
 from acoular.internal import digest
 from acoular.spectra import PowerSpectra
