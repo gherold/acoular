@@ -128,13 +128,15 @@ class SteeringVectorInduct( SteeringVector ):
         cor[int(mshape/2.),0] = 999.
         return cor    
     
-    def transfer( self, gpos, mpos, c, freq ):
+    def transfer( self, freq, ind=None ):
         """
         Induct transfer function [ngrid x nmic]
         """
-        gp = self._polar(gpos)
+        if ind is not None: raise NotImplementedError()
+        gp = self._polar(self.grid.gpos)
         # append reference point to the mic array positions
-        mp = append(self._polar(mpos),array([[0.],[0.],[0.]]), axis=1)
+        mp = append(self._polar(self.mics.mpos),array([[0.],[0.],[0.]]), axis=1)
+        c = self.env.c
         Ma = -self.ma
         
         Omega = self.rpm/60.*2*pi # rotation in rad/s        
