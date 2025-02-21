@@ -40,6 +40,7 @@ from .microphones import MicGeomCirc
 from .trajectory import AngleTrajectory, TrajectoryAnglesFromTrigger
 from .trigger import Trigger
 
+
 class SpaceModesTransformer ( TimeOut ):
     """
     Class to transform mic signals into mode domain or vice versa via spatial fft.
@@ -60,10 +61,10 @@ class SpaceModesTransformer ( TimeOut ):
     #: Array of modes that are calculated. Read-only.
     #: If source input is from mode domain, order is assumed to be 
     #: [0, 1, 2, ... , M/2-1, -M/2, ..., -2, -1]
-    modes = Property( depends_on = ['source.digest', 'numchannels'])
+    modes = Property( depends_on = ['source.digest', 'num_channels'])
 
     #: Number of channels/modes, is set automatically.
-    numchannels = Property(depends_on = ['channel_order', \
+    num_channels = Property(depends_on = ['channel_order', \
         'source.sigest'], desc="number of valid channels")
 
     # internal identifier
@@ -74,19 +75,19 @@ class SpaceModesTransformer ( TimeOut ):
         return digest(self)
 
     @cached_property
-    def _get_numchannels( self ):
+    def _get_num_channels( self ):
         if self.channel_order:
             return len(self.channel_order)
         else:
-            return self.source.numchannels
+            return self.source.num_channels
 
 
     @cached_property
     def _get_modes( self ):
         if not self.inverse:
-            nc = self.numchannels
+            nc = self.num_channels
         else:
-            nc = self.source.numchannels
+            nc = self.source.num_channels
         return fft.fftfreq(nc, 1/nc).astype(int)
         
     def result(self, num):
@@ -101,7 +102,7 @@ class SpaceModesTransformer ( TimeOut ):
         
         Returns
         -------
-        Samples in blocks of shape (num, :attr:`numchannels`). 
+        Samples in blocks of shape (num, :attr:`num_channels`). 
             The last block may be shorter than num.
         """
         
@@ -190,7 +191,7 @@ class VirtualRotator ( TimeOut ):
         
         Returns
         -------
-        Samples in blocks of shape (num, numchannels). 
+        Samples in blocks of shape (num, num_channels). 
             The last block may be shorter than num.
         """
         if self.rpm == 0.0: # if it doesn't rotate, do nothing...
@@ -370,7 +371,7 @@ class VirtualRotatorAngle ( VirtualRotator ):
         
         Returns
         -------
-        Samples in blocks of shape (num, numchannels). 
+        Samples in blocks of shape (num, num_channels). 
             The last block may be shorter than num.
         """
 
@@ -563,7 +564,7 @@ class VirtualRotatorModal ( TimeOut ):
         
         Returns
         -------
-        Samples in blocks of shape (num, numchannels). 
+        Samples in blocks of shape (num, num_channels). 
             The last block may be shorter than num.
         """
         
@@ -574,7 +575,7 @@ class VirtualRotatorModal ( TimeOut ):
         else:
             
             # list of modes
-            modes = fft.fftfreq(self.numchannels, 1/self.numchannels).astype(int)
+            modes = fft.fftfreq(self.num_channels, 1/self.num_channels).astype(int)
             
           
             # constant rotation 
@@ -678,7 +679,7 @@ class VirtualRotatorSpatial ( TimeOut ):
         
         Returns
         -------
-        Samples in blocks of shape (num, numchannels). 
+        Samples in blocks of shape (num, num_channels). 
             The last block may be shorter than num.
         """
 
@@ -1218,8 +1219,8 @@ class RotationalSpeed ( TimeOut ):
     TODO: Maybe include real-time trigger identification.
     '''
     
-    #: Number of successive rps values to average over, defaults to 3.
-    naverage = Int(4, 
+    #: Number of successive rps values to average over, defaults to 4.
+    num_per_average = Int(4, 
         desc = "number of samples to average over")
 
     #: Trigger data from :class:`acoular.tprocess.Trigger`.
@@ -1264,7 +1265,7 @@ class RotationalSpeed ( TimeOut ):
             If true, yield result in revolution per sample instead of rev per second. 
         Returns
         -------
-        Samples in blocks of shape (num, numchannels). 
+        Samples in blocks of shape (num, num_channels). 
             The last block may be shorter than num.
         """
         
@@ -1274,7 +1275,7 @@ class RotationalSpeed ( TimeOut ):
             unit = self.sample_freq
         
         self.trigger.source = self.source
-        ns = self.numsamples
+        ns = self.num_samples
         
         inds_trigger, maxdist, mindist = self.trigger.trigger_data
         # trigger distances in samples

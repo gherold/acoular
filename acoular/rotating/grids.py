@@ -114,7 +114,7 @@ class CircGrid (Grid):
     def _get_digest( self ):
         return digest( self )
 
-    def _get_gpos( self, polar = False ):
+    def _get_pos( self, polar = False ):
         """
         Calculates grid co-ordinates.
         
@@ -203,8 +203,8 @@ class CircGrid (Grid):
             an array with the same shape as the grid.            
         """
         if phi2 is None:
-            xpos = self.pos()
-            pos = self.pos(polar = True)
+            xpos = self.pos
+            pos = self._get_pos(polar = True)
             x = r1*cos(phi1/180.0*pi)
             y = r1*sin(phi1/180.0*pi)
             ris = []
@@ -272,7 +272,7 @@ class CircMesh( HasPrivateTraits ):
     
     def _get_X ( self ):
         gsh=self.grid.shape
-        pos0 = self.grid.pos()[0].reshape(gsh)
+        pos0 = self.grid.pos[0].reshape(gsh)
         if (self.grid.phi_max-self.grid.phi_min == 360.0):
             posx = empty((gsh[0],gsh[1]+1))
             posx[:,0:-1] = pos0[:,:]
@@ -283,7 +283,7 @@ class CircMesh( HasPrivateTraits ):
 
     def _get_Y ( self ):
         gsh=self.grid.shape
-        pos1 = self.grid.pos()[1].reshape(gsh)
+        pos1 = self.grid.pos[1].reshape(gsh)
         if (self.grid.phi_max-self.grid.phi_min == 360.0):
             posy = empty((gsh[0],gsh[1]+1))
             posy[:,0:-1] = pos1[:,:]
@@ -339,7 +339,7 @@ class GridMesh( HasPrivateTraits ):
 
     def _get_XYMAP ( self ):
         # Interpolate using delaunay triangularization 
-        xpos = self.grid.pos()        
+        xpos = self.grid.pos        
         print(xpos[0].shape)
         print(xpos[1].shape)
         print(self.map_in.shape)
@@ -433,14 +433,12 @@ class EqCircGrid (Grid):
             self.r_min = 0
         return digest( self )
 
-    def _get_gpos ( self ):
-        return self.pos()
-    
+   
     @property_depends_on('rmax')
     def _get_extent(self):
         return (-self.r_max, self.r_max, -self.r_max, self.r_max)
         
-    def _get_gpos( self, polar = False ):
+    def _get_pos( self, polar = False ):
         """
         Calculates grid co-ordinates.
         
@@ -512,7 +510,7 @@ class EqCircGrid (Grid):
             raise(ValueError, "r-value out of range")
         if phi  <  self.phi_min or phi > self.phi_max:
             raise(ValueError, "phi-value out of range")
-        xpos = self.pos()
+        xpos = self.pos
         x = r*cos(phi/180.0*pi)
         y = r*sin(phi/180.0*pi)
         dr2 = (xpos[0,:]-x)**2 + (xpos[1,:]-y)**2
@@ -541,7 +539,7 @@ class EqCircGrid (Grid):
         """
         
         if len(r) == 3:
-            xpos = self.pos()
+            xpos = self.pos
     
             x = r[0]*cos(r[1]/180.0*pi)
             y = r[0]*sin(r[1]/180.0*pi)
@@ -554,7 +552,7 @@ class EqCircGrid (Grid):
                 return arange(self.size)[inds]
                 
         elif len(r) == 4:
-            xpos = self.pos(polar=True)
+            xpos = self._get_pos(polar=True)
             inds0 = (xpos[0] >= r[0]) * (xpos[0] <= r[2]) # '*' = 'and'
             
             
@@ -566,7 +564,7 @@ class EqCircGrid (Grid):
             inds = inds0 * inds1
             return arange(self.size)[inds]
         else:
-            xpos = self.pos()
+            xpos = self.pos
             p = Path(array(r).reshape(-1,2))
             inds = p.contains_points(xpos[:2,:].T)
             return arange(self.size)[inds]
@@ -760,7 +758,7 @@ class EqCircGrid3D (EqCircGrid):
             raise(ValueError, "phi-value out of range")
         if z  <  self.z_min or z > self.z_max:
             raise(ValueError, "z-value out of range")
-        xpos = self.pos()
+        xpos = self.pos
         x = r*cos(phi/180.0*pi)
         y = r*sin(phi/180.0*pi)
         dr2 = (xpos[0,:]-x)**2 + (xpos[1,:]-y)**2 + (xpos[2,:]-z)**2
@@ -789,7 +787,7 @@ class EqCircGrid3D (EqCircGrid):
         """
         
         if len(r) == 3:
-            xpos = self.pos()
+            xpos = self.pos
     
             x = r[0]*cos(r[1]/180.0*pi)
             y = r[0]*sin(r[1]/180.0*pi)
@@ -808,7 +806,7 @@ class EqCircGrid3D (EqCircGrid):
         elif len(r) == 4:
             np0 = self.shape[0] # number of EqCircGrid planes
             np1 = self.shape[1] # number of points in one plane
-            xpos = self.pos(polar=True).reshape(3,np0,np1)[:,0,:]
+            xpos = self._get_pos(polar=True).reshape(3,np0,np1)[:,0,:]
             inds0 = (xpos[0] >= r[0]) * (xpos[0] <= r[2]) # '*' = 'and'
             
             
@@ -821,7 +819,7 @@ class EqCircGrid3D (EqCircGrid):
             # return r-phi slices (..[inds]) of all z-planes (s_..)
             return s_[0:np0], arange(np1)[inds]
         else:
-            xpos = self.pos()
+            xpos = self.pos
             np0 = self.shape[0] # number of EqCircGrid planes
             np1 = self.shape[1] # number of points in one plane
             p = Path(array(r).reshape(-1,2))

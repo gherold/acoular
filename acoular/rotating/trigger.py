@@ -266,7 +266,7 @@ class FeatureTrigger(Trigger):
         return thresh
     
     def _check_trigger_existence(self):
-        nChannels = self.source.numchannels
+        nChannels = self.source.num_channels
         if not nChannels == 1:
             raise Exception('Trigger signal must consist of ONE channel, instead %s channels are given!' % nChannels)
         return 0

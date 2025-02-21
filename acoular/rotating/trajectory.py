@@ -162,7 +162,7 @@ class AngleTrajectory ( Trajectory ):
         ref_ind = 5 # index difference for trigger determination
         ind = ref_ind # so you can subtract ref_ind when looking for trigger position
         ntrig = self.ntrig
-        ns =  self.source.numsamples
+        ns =  self.source.num_samples
 
         #dang = 360.0/ntrig # don't use this anymore, since it is not given that angles between trigger are exact portion of full circle
         dang = 360.

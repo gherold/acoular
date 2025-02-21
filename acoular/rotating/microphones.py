@@ -122,16 +122,16 @@ with mpos after removing invalids)")
         Import the microphone positions from .xml file.
         Automatically called when the file name changes.
         """
-        if not path.isfile(self.from_file):
+        if not path.isfile(self.file):
             # no file there
-            self.mpos_tot = array([], 'd')
+            self.pos_total = array([], 'd')
             #self.num_mics = 0
             print('\nGeometry file (', self.basename, '. xml ) not found!\n')
             return
             
         # open the xml file
         import xml.dom.minidom
-        doc = xml.dom.minidom.parse(self.from_file)
+        doc = xml.dom.minidom.parse(self.file)
         self.ringlist = []
         
         # create the list of rings with microphones
@@ -170,7 +170,7 @@ with mpos after removing invalids)")
                           self.ringlist[iring].z ]
 
         # calculate cartesian coords...
-        self.mpos_tot = array( [rphiz[:, 0] * cos(rphiz[:, 1]), 
+        self.pos_total = array( [rphiz[:, 0] * cos(rphiz[:, 1]), 
                                 rphiz[:, 0] * sin(rphiz[:, 1]), 
                                 rphiz[:, 2]], 'd' )
         self.mic_index = mic_index                          

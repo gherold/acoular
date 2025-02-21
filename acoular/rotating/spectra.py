@@ -11,7 +11,6 @@
 
     PowerSpectraComplex
     PowerSpectraDR
-    synthetic
 """
 from warnings import warn
 
@@ -79,91 +78,3 @@ class PowerSpectraDR( PowerSpectra ):
             csm[ind, idiag, idiag] = new_dia
         fullcsm[self.ind_low:self.ind_high] = csm
         return fullcsm
-
-
-def synthetic (data, freqs, f, num=3):
-    """
-    Returns synthesized frequency band values of spectral data.
-    
-    If used with :meth:`Beamformer.result()<acoular.fbeamform.BeamformerBase.result>` 
-    and only one frequency band, the output is identical to the result of the intrinsic 
-    :meth:`Beamformer.synthetic<acoular.fbeamform.BeamformerBase.synthetic>` method.
-    It can, however, also be used with the 
-    :meth:`Beamformer.integrate<acoular.fbeamform.BeamformerBase.integrate>`
-    output and more frequency bands.
-    
-    Parameters
-    ----------
-    data : array of floats
-        The spectral data (sound pressures in Pa) in an array with one value 
-        per frequency line.
-        The number of entries must be identical to the number of
-        grid points.
-    freq : array of floats
-        The frequencies that correspon to the input *data* (as yielded by
-        the :meth:`PowerSpectra.fftfreq<acoular.spectra.PowerSpectra.fftfreq>`
-        method).
-    f : float or list of floats
-        Band center frequency/frequencies for which to return the results.
-    num : integer
-        Controls the width of the frequency bands considered; defaults to
-        3 (third-octave band).
-        
-        ===  =====================
-        num  frequency band width
-        ===  =====================
-        0    single frequency line
-        1    octave band
-        3    third-octave band
-        n    1/n-octave band
-        ===  =====================
-
-    Returns
-    -------
-    array of floats
-        Synthesized frequency band values of the beamforming result at 
-        each grid point (the sum of all values that are contained in the band).
-        Note that the frequency resolution and therefore the bandwidth 
-        represented by a single frequency line depends on 
-        the :attr:`sampling frequency<acoular.tprocess.SamplesGenerator.sample_freq>` 
-        and used :attr:`FFT block size<acoular.spectra.PowerSpectra.block_size>`.
-    """
-    if isscalar(f):
-        f = (f,)
-    if num == 0:
-        # single frequency lines
-        res = list()
-        for i in f:
-            ind = searchsorted(freqs, i)
-            if ind >= len(freqs):
-                warn('Queried frequency (%g Hz) not in resolved '
-                     'frequency range. Returning zeros.' % i, 
-                     Warning, stacklevel = 2)
-                h = zeros_like(data[0])
-            else:
-                if freqs[ind] != i:
-                    warn('Queried frequency (%g Hz) not in set of '
-                         'discrete FFT sample frequencies. '
-                         'Using frequency %g Hz instead.' % (i,freqs[ind]), 
-                         Warning, stacklevel = 2)
-                h = data[ind]
-            res += [h]      
-    else:
-        # fractional octave bands
-        res = list()
-        for i in f:
-            f1 = i*2.**(-0.5/num)
-            f2 = i*2.**(+0.5/num)
-            ind1 = searchsorted(freqs, f1)
-            ind2 = searchsorted(freqs, f2)
-            if ind1 == ind2:
-                warn('Queried frequency band (%g to %g Hz) does not '
-                     'include any discrete FFT sample frequencies. '
-                     'Returning zeros.' % (f1,f2), 
-                     Warning, stacklevel = 2)
-                h = zeros_like(data[0])
-            else:
-                h = sum(data[ind1:ind2], 0)
-            res += [h]
-    return array(res)
-
