@@ -14,8 +14,8 @@
 """
 from warnings import warn
 
-from numpy import (absolute, arange, array, diag, isscalar, newaxis,
-                   searchsorted, sum, zeros_like)
+from numpy import (absolute, arange, diag,  newaxis,
+                 sum)
 from traits.api import Int, Property, cached_property, property_depends_on
 
 from acoular.internal import digest
@@ -31,7 +31,7 @@ class PowerSpectraDR( PowerSpectra ):
 
     # internal identifier
     digest = Property( 
-        depends_on = ['_source.digest', 'calib.digest', 'block_size', 
+        depends_on = ['source.digest', 'block_size', 
             'window', 'overlap', 'precision', 'n_iter'], 
         )
 

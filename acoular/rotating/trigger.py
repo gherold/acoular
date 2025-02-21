@@ -81,6 +81,10 @@ class Trigger( TimeOut ):
 
         return peak_loc[::self.num_trig_per_rev]
     
+    def result(self, num):
+        msg = 'result method not implemented yet! Data from source will be passed without transformation.'
+        warn(msg, Warning, stacklevel=2)
+        yield from self.source.result(num)
 
 
 

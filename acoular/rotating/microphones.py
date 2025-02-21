@@ -13,6 +13,7 @@ Implements support for circular microphone arrays
     MicGeomCirc
 """
 
+import xml.dom.minidom
 
 from os import path
 
@@ -60,7 +61,7 @@ class MicGeomCirc(MicGeom):
 
     
     # internal identifier
-    digest = Property( depends_on = ['mpos', ])
+    digest = Property( depends_on = ['pos', ])
 
     #: List of microphone rings in the array (the list contains
     #: instances of the :class:`MicRing` class.
@@ -116,7 +117,8 @@ with mpos after removing invalids)")
     def _get_num_mics( self ):
         return self.mic_index.shape[0]
         
-    @on_trait_change('basename')
+    
+    @on_trait_change('file')
     def import_mpos( self ):
         """
         Import the microphone positions from .xml file.
@@ -130,7 +132,6 @@ with mpos after removing invalids)")
             return
             
         # open the xml file
-        import xml.dom.minidom
         doc = xml.dom.minidom.parse(self.file)
         self.ringlist = []
         
