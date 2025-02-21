@@ -15,6 +15,8 @@ import sys
 from os import environ, mkdir, path
 from warnings import warn
 
+# WARNING: DO NOT ADD ANY IMPORTS HERE THAT MIGHT IMPORT NUMPY
+
 # When numpy is using OpenBLAS then it runs with OPENBLAS_NUM_THREADS which may lead to
 # overcommittment when called from within numba jitted function that run on
 # NUMBA_NUM_THREADS. If overcommitted, things get extremely! slow. Therefore we make an
@@ -50,11 +52,11 @@ if 'numpy' in sys.modules:
             stacklevel=2,
         )
 else:
-    # numpy is not loaded
+    # numpy is not loaded, make sure that OpenBLAS runs single threaded
     environ['OPENBLAS_NUM_THREADS'] = '1'
 
 # this loads numpy, so we have to defer loading until OpenBLAS check is done
-from traits.api import Bool, Enum, HasStrictTraits, Property, Str, Trait, cached_property
+from traits.api import Bool, Enum, HasStrictTraits, File, Property, cached_property  # noqa: I001
 
 
 class Config(HasStrictTraits):
@@ -90,11 +92,11 @@ class Config(HasStrictTraits):
     #: * 'overwrite': Acoular classes replace existing cachefile content with new data.
     global_caching = Property()
 
-    _global_caching = Trait('individual', 'all', 'none', 'readonly', 'overwrite')
+    _global_caching = Enum('individual', 'all', 'none', 'readonly', 'overwrite')
 
     #: Flag that globally defines package used to read and write .h5 files
-    #: defaults to 'pytables'. It is also possible to set it to 'tables', which is an alias for 'pytables'.
-    #: If 'pytables' can not be imported, 'h5py' is used.
+    #: defaults to 'pytables'. It is also possible to set it to 'tables', which is an alias for
+    #: 'pytables'. If pytables cannot be imported, 'h5py' is used.
     h5library = Property()
 
     _h5library = Enum('pytables', 'tables', 'h5py')
@@ -104,14 +106,14 @@ class Config(HasStrictTraits):
     #: it will be created. :attr:`cache_dir` defaults to current session path.
     cache_dir = Property()
 
-    _cache_dir = Str('')
+    _cache_dir = File()
 
     #: Defines the working directory containing data files. Used only by
     #: :class:`~acoular.tprocess.WriteH5` class.
     #: Defaults to current session path.
     td_dir = Property()
 
-    _td_dir = Str(path.curdir)
+    _td_dir = File(path.curdir)
 
     #: Boolean Flag that determines whether user has access to traitsui features.
     #: Defaults to False.
@@ -232,8 +234,8 @@ by :attr:`h5library`:
 Some Acoular classes support GUI elements for usage with tools from the TraitsUI package.
 If desired, this package has to be installed manually, as it is not a prerequisite for
 installing Acoular.
-To enable the functionality, the flag attribute :attr:`use_traitsui` has to be set to True (default: False).
-Note: this is independent from the GUI tools implemented in the spectAcoular package.
+To enable the functionality, the flag attribute :attr:`use_traitsui` has to be set to True (default:
+False). Note: this is independent from the GUI tools implemented in the spectAcoular package.
 
 
 Example:

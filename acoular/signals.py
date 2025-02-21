@@ -7,6 +7,8 @@
     :toctree: generated/
 
     SignalGenerator
+    PeriodicSignalGenerator
+    NoiseGenerator
     WNoiseGenerator
     PNoiseGenerator
     FiltWNoiseGenerator
@@ -16,19 +18,33 @@
 """
 
 # imports from other packages
+from abc import abstractmethod
 from warnings import warn
 
 from numpy import arange, array, log, pi, repeat, sin, sqrt, tile, zeros
 from numpy.random import RandomState
 from scipy.signal import resample, sosfilt, tf2sos
-from traits.api import Bool, CArray, CLong, Delegate, Float, HasPrivateTraits, Int, Property, Trait, cached_property
+from traits.api import (
+    ABCHasStrictTraits,
+    Bool,
+    CArray,
+    CInt,
+    Delegate,
+    Float,
+    Instance,
+    Int,
+    Property,
+    cached_property,
+)
 
 # acoular imports
 from .base import SamplesGenerator
+from .deprecation import deprecated_alias
 from .internal import digest
 
 
-class SignalGenerator(HasPrivateTraits):
+@deprecated_alias({'numsamples': 'num_samples'})
+class SignalGenerator(ABCHasStrictTraits):
     """Virtual base class for a simple one-channel signal generator.
 
     Defines the common interface for all SignalGenerator classes. This class
@@ -36,21 +52,20 @@ class SignalGenerator(HasPrivateTraits):
     should not be used directly as it contains no real functionality.
     """
 
-    #: RMS amplitude of source signal (for point source: in 1 m distance).
-    rms = Float(1.0, desc='rms amplitude')
-
     #: Sampling frequency of the signal.
     sample_freq = Float(1.0, desc='sampling frequency')
 
     #: Number of samples to generate.
-    numsamples = CLong
+    num_samples = CInt
 
     # internal identifier
-    digest = Property
+    digest = Property(depends_on=['sample_freq', 'num_samples'])
 
+    @abstractmethod
     def _get_digest(self):
-        return ''
+        """Returns the internal identifier."""
 
+    @abstractmethod
     def signal(self):
         """Deliver the signal."""
 
@@ -68,14 +83,52 @@ class SignalGenerator(HasPrivateTraits):
         Returns
         -------
         array of floats
-            The resulting signal of length `factor` * :attr:`numsamples`.
-
+            The resulting signal of length `factor` * :attr:`num_samples`.
         """
-        return resample(self.signal(), factor * self.numsamples)
+        return resample(self.signal(), factor * self.num_samples)
 
 
-class WNoiseGenerator(SignalGenerator):
-    """White noise signal generator."""
+class PeriodicSignalGenerator(SignalGenerator):
+    """
+    Abstract base class for periodic signal generators.
+
+    Defines the common interface for all :class:`SignalGenerator`-derived classes with periodic
+    signals. This class may be used as a base for class handling periodic signals that can be
+    characterized by their frequency, phase and amplitude. It should not be used directly as it
+    contains no real functionality.
+    """
+
+    #: Frequency of the signal, float, defaults to 1000.0.
+    freq = Float(1000.0, desc='Frequency')
+
+    #: Phase of the signal (in radians), float, defaults to 0.0.
+    phase = Float(0.0, desc='Phase')
+
+    #: Amplitude of the signal. Defaults to 1.0.
+    amplitude = Float(1.0)
+
+    # internal identifier
+    digest = Property(depends_on=['amplitude', 'num_samples', 'sample_freq', 'freq', 'phase'])
+
+    @abstractmethod
+    def _get_digest(self):
+        """Returns the internal identifier."""
+
+    @abstractmethod
+    def signal(self):
+        """Deliver the signal."""
+
+
+class NoiseGenerator(SignalGenerator):
+    """Abstract base class for noise signal generators.
+
+    Defines the common interface for all :class:`SignalGenerator` classes with noise signals. This
+    class may be used as a base for class handling noise signals that can be characterized by their
+    RMS amplitude. It should not be used directly as it contains no real functionality.
+    """
+
+    #: RMS amplitude of the signal.
+    rms = Float(1.0, desc='rms amplitude')
 
     #: Seed for random number generator, defaults to 0.
     #: This parameter should be set differently for different instances
@@ -83,9 +136,22 @@ class WNoiseGenerator(SignalGenerator):
     seed = Int(0, desc='random seed value')
 
     # internal identifier
-    digest = Property(
-        depends_on=['rms', 'numsamples', 'sample_freq', 'seed', '__class__'],
-    )
+    digest = Property(depends_on=['rms', 'seed', 'sample_freq', 'num_samples'])
+
+    @abstractmethod
+    def _get_digest(self):
+        """Returns the internal identifier."""
+
+    @abstractmethod
+    def signal(self):
+        """Deliver the signal."""
+
+
+class WNoiseGenerator(NoiseGenerator):
+    """White noise signal generator."""
+
+    # internal identifier
+    digest = Property(depends_on=['rms', 'seed', 'sample_freq', 'num_samples'])
 
     @cached_property
     def _get_digest(self):
@@ -97,14 +163,13 @@ class WNoiseGenerator(SignalGenerator):
         Returns
         -------
         Array of floats
-            The resulting signal as an array of length :attr:`~SignalGenerator.numsamples`.
-
+            The resulting signal as an array of length :attr:`~SignalGenerator.num_samples`.
         """
         rnd_gen = RandomState(self.seed)
-        return self.rms * rnd_gen.standard_normal(self.numsamples)
+        return self.rms * rnd_gen.standard_normal(self.num_samples)
 
 
-class PNoiseGenerator(SignalGenerator):
+class PNoiseGenerator(NoiseGenerator):
     """Pink noise signal generator.
 
     Simulation of pink noise is based on the Voss-McCartney algorithm.
@@ -117,33 +182,26 @@ class PNoiseGenerator(SignalGenerator):
     characteristic.
     """
 
-    #: Seed for random number generator, defaults to 0.
-    #: This parameter should be set differently for different instances
-    #: to guarantee statistically independent (non-correlated) outputs.
-    seed = Int(0, desc='random seed value')
-
     #: "Octave depth" -- higher values for 1/f spectrum at low frequencies,
     #: but longer calculation, defaults to 16.
     depth = Int(16, desc='octave depth')
 
     # internal identifier
-    digest = Property(
-        depends_on=['rms', 'numsamples', 'sample_freq', 'seed', 'depth', '__class__'],
-    )
+    digest = Property(depends_on=['rms', 'seed', 'sample_freq', 'num_samples', 'depth'])
 
     @cached_property
     def _get_digest(self):
         return digest(self)
 
     def signal(self):
-        nums = self.numsamples
+        nums = self.num_samples
         depth = self.depth
         # maximum depth depending on number of samples
         max_depth = int(log(nums) / log(2))
 
         if depth > max_depth:
             depth = max_depth
-            print('Pink noise filter depth set to maximum possible value of %d.' % max_depth)
+            print(f'Pink noise filter depth set to maximum possible value of {max_depth:d}.')
 
         rnd_gen = RandomState(self.seed)
         s = rnd_gen.standard_normal(nums)
@@ -173,17 +231,7 @@ class FiltWNoiseGenerator(WNoiseGenerator):
     ma = CArray(value=array([]), dtype=float, desc='moving-average coefficients (coefficients of the numerator)')
 
     # internal identifier
-    digest = Property(
-        depends_on=[
-            'ar',
-            'ma',
-            'rms',
-            'numsamples',
-            'sample_freq',
-            'seed',
-            '__class__',
-        ],
-    )
+    digest = Property(depends_on=['rms', 'seed', 'sample_freq', 'num_samples', 'ar', 'ma'])
 
     @cached_property
     def _get_digest(self):
@@ -200,8 +248,7 @@ class FiltWNoiseGenerator(WNoiseGenerator):
         Returns
         -------
         Array of floats
-            The resulting signal as an array of length :attr:`~SignalGenerator.numsamples`.
-
+            The resulting signal as an array of length :attr:`~SignalGenerator.num_samples`.
         """
         rnd_gen = RandomState(self.seed)
         ma = self.handle_empty_coefficients(self.ma)
@@ -210,56 +257,16 @@ class FiltWNoiseGenerator(WNoiseGenerator):
         ntaps = ma.shape[0]
         sdelay = round(0.5 * (ntaps - 1))
         wnoise = self.rms * rnd_gen.standard_normal(
-            self.numsamples + sdelay,
+            self.num_samples + sdelay,
         )  # create longer signal to compensate delay
         return sosfilt(sos, x=wnoise)[sdelay:]
 
 
-class SineGenerator(SignalGenerator):
-    """Sine signal generator with adjustable frequency and phase."""
-
-    #: Sine wave frequency, float, defaults to 1000.0.
-    freq = Float(1000.0, desc='Frequency')
-
-    #: Sine wave phase (in radians), float, defaults to 0.0.
-    phase = Float(0.0, desc='Phase')
-
-    # Internal shadow trait for rms/amplitude values.
-    # Do not set directly.
-    _amp = Float(1.0)
-
-    #: RMS of source signal (for point source: in 1 m distance).
-    #: Deprecated. For amplitude use :attr:`amplitude`.
-    rms = Property(desc='rms amplitude')
-
-    def _get_rms(self):
-        return self._amp / 2**0.5
-
-    def _set_rms(self, rms):
-        warn(
-            'Using rms to set amplitude is deprecated and will be removed in version 25.01. '
-            'Up to Acoular 20.02, rms is interpreted as sine amplitude. '
-            'This has since been corrected (rms now is 1/sqrt(2) of amplitude). '
-            "Use 'amplitude' trait to directly set the ampltiude.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self._amp = rms * 2**0.5
-
-    #: Amplitude of source signal (for point source: in 1 m distance).
-    #: Defaults to 1.0.
-    amplitude = Property(desc='amplitude')
-
-    def _get_amplitude(self):
-        return self._amp
-
-    def _set_amplitude(self, amp):
-        self._amp = amp
+class SineGenerator(PeriodicSignalGenerator):
+    """Sine signal generator with adjustable amplitude, frequency and phase."""
 
     # internal identifier
-    digest = Property(
-        depends_on=['_amp', 'numsamples', 'sample_freq', 'freq', 'phase', '__class__'],
-    )
+    digest = Property(depends_on=['num_samples', 'sample_freq', 'amplitude', 'freq', 'phase'])
 
     @cached_property
     def _get_digest(self):
@@ -271,13 +278,13 @@ class SineGenerator(SignalGenerator):
         Returns
         -------
         array of floats
-            The resulting signal as an array of length :attr:`~SignalGenerator.numsamples`.
-
+            The resulting signal as an array of length :attr:`~SignalGenerator.num_samples`.
         """
-        t = arange(self.numsamples, dtype=float) / self.sample_freq
+        t = arange(self.num_samples, dtype=float) / self.sample_freq
         return self.amplitude * sin(2 * pi * self.freq * t + self.phase)
 
 
+@deprecated_alias({'rms': 'amplitude'})
 class GenericSignalGenerator(SignalGenerator):
     """Generate signal from output of :class:`~acoular.base.SamplesGenerator` object.
 
@@ -292,35 +299,37 @@ class GenericSignalGenerator(SignalGenerator):
     >>> data = np.random.rand(1000, 1)
     >>> ts = TimeSamples(data=data, sample_freq=51200)
     >>> sig = GenericSignalGenerator(source=ts)
-
     """
 
     #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
-    source = Trait(SamplesGenerator)
+    source = Instance(SamplesGenerator)
+
+    #: Amplitude of the signal. Defaults to 1.0.
+    amplitude = Float(1.0)
 
     #: Sampling frequency of output signal, as given by :attr:`source`.
     sample_freq = Delegate('source')
 
-    _numsamples = CLong(0)
+    _num_samples = CInt(0)
 
-    #: Number of samples to generate. Is set to source.numsamples by default.
-    numsamples = Property()
+    #: Number of samples to generate. Is set to source.num_samples by default.
+    num_samples = Property()
 
-    def _get_numsamples(self):
-        if self._numsamples:
-            return self._numsamples
-        return self.source.numsamples
+    def _get_num_samples(self):
+        if self._num_samples:
+            return self._num_samples
+        return self.source.num_samples
 
-    def _set_numsamples(self, numsamples):
-        self._numsamples = numsamples
+    def _set_num_samples(self, num_samples):
+        self._num_samples = num_samples
 
     #: Boolean flag, if 'True' (default), signal track is repeated if requested
-    #: :attr:`numsamples` is higher than available sample number
+    #: :attr:`num_samples` is higher than available sample number
     loop_signal = Bool(True)
 
     # internal identifier
     digest = Property(
-        depends_on=['source.digest', 'loop_signal', 'numsamples', 'rms', '__class__'],
+        depends_on=['source.digest', 'loop_signal', 'num_samples', 'amplitude'],
     )
 
     @cached_property
@@ -333,17 +342,17 @@ class GenericSignalGenerator(SignalGenerator):
         Returns
         -------
         array of floats
-            The resulting signal as an array of length :attr:`~GenericSignalGenerator.numsamples`.
+            The resulting signal as an array of length :attr:`~GenericSignalGenerator.num_samples`.
 
         """
         block = 1024
-        if self.source.numchannels > 1:
+        if self.source.num_channels > 1:
             warn(
                 'Signal source has more than one channel. Only channel 0 will be used for signal.',
                 Warning,
                 stacklevel=2,
             )
-        nums = self.numsamples
+        nums = self.num_samples
         track = zeros(nums)
 
         # iterate through source generator to fill signal track
@@ -366,6 +375,4 @@ class GenericSignalGenerator(SignalGenerator):
             res = nums % stop  # last part of unfinished loop
             if res > 0:
                 track[stop * nloops :] = track[:res]
-
-        # The rms value is just an amplification here
-        return self.rms * track
+        return self.amplitude * track

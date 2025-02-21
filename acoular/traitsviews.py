@@ -39,7 +39,7 @@ MicGeom.class_trait_view(
     'traits_view',
     View(
         [
-            'from_file',
+            'file',
             'num_mics~',
             '|[Microphone geometry]',
         ],
@@ -70,7 +70,7 @@ Calib.class_trait_view(
     'traits_view',
     View(
         [
-            'from_file{File name}',
+            'file{File name}',
             [
                 'num_mics~{Number of microphones}',
                 '|[Properties]',
@@ -307,8 +307,8 @@ TimeSamples.class_trait_view(
             'name{File name}',
             [
                 'sample_freq~{Sampling frequency}',
-                'numchannels~{Number of channels}',
-                'numsamples~{Number of samples}',
+                'num_channels~{Number of channels}',
+                'num_samples~{Number of samples}',
                 '|[Properties]',
             ],
             '|',
@@ -327,8 +327,8 @@ MaskedTimeSamples.class_trait_view(
             'invalid_channels{Invalid channels}',
             [
                 'sample_freq~{Sampling frequency}',
-                'numchannels~{Number of channels}',
-                'numsamples~{Number of samples}',
+                'num_channels~{Number of channels}',
+                'num_samples~{Number of samples}',
                 '|[Properties]',
             ],
             '|',
@@ -441,7 +441,7 @@ BeamformerDamasPlus.class_trait_view(
         [
             [Item('beamformer{}', style='custom')],
             [Item('method{Solver}')],
-            [Item('max_iter{Max. number of iterations}')],
+            [Item('n_iter{Max. number of iterations}')],
             [Item('alpha', label='Lasso weight factor')],
             [Item('calcmode{How to calculate PSF}')],
             '|',
@@ -473,7 +473,7 @@ BeamformerCleansc.class_trait_view(
         [
             #            [Item('mpos{}', style='custom')],
             #            [Item('grid', style='custom'), '-<>'],
-            [Item('n', label='No. of iterations', style='simple')],
+            [Item('n_iter', label='No. of iterations', style='simple')],
             [Item('r_diag', label='Diagonal removed')],
             #            [Item('env{}', style='custom')],
             '|',
@@ -505,7 +505,7 @@ BeamformerCMF.class_trait_view(
             #            [Item('mpos{}', style='custom')],
             #            [Item('grid', style='custom'), '-<>'],
             [Item('method', label='Fit method')],
-            [Item('max_iter', label='No. of iterations')],
+            [Item('n_iter', label='(Max.) no. of iterations')],
             [Item('alpha', label='Lasso weight factor')],
             [Item('c', label='Speed of sound')],
             #            [Item('env{}', style='custom')],
@@ -523,7 +523,7 @@ BeamformerGIB.class_trait_view(
             #            [Item('mpos{}', style='custom')],
             #            [Item('grid', style='custom'), '-<>'],
             [Item('method', label='Fit method')],
-            [Item('max_iter', label='No. of iterations')],
+            [Item('n_iter', label='(Max.) no. of iterations')],
             [Item('alpha', label='Lasso weight factor')],
             [Item('c', label='Speed of sound')],
             #            [Item('env{}', style='custom')],

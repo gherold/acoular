@@ -17,15 +17,18 @@ from warnings import warn
 
 import numpy as np
 from scipy import fft
-from traits.api import Bool, CArray, Enum, Instance, Int, Property, Trait, Union, cached_property
+from traits.api import Bool, CArray, Enum, Instance, Int, Property, Union, cached_property
 
+# acoular imports
 from .base import SamplesGenerator, SpectraGenerator, SpectraOut, TimeOut
+from .deprecation import deprecated_alias
 from .fastFuncs import calcCSM
 from .internal import digest
+from .process import SamplesBuffer
 from .spectra import BaseSpectra
-from .tools.utils import SamplesBuffer
 
 
+@deprecated_alias({'numfreqs': 'num_freqs', 'numsamples': 'num_samples'}, read_only=True)
 class RFFT(BaseSpectra, SpectraOut):
     """Provides the one-sided Fast Fourier Transform (FFT) for real-valued multichannel time data.
 
@@ -38,7 +41,8 @@ class RFFT(BaseSpectra, SpectraOut):
     source = Instance(SamplesGenerator)
 
     #: Number of workers to use for the FFT calculation. If negative values are used,
-    #: all available logical CPUs will be considered (``scipy.fft.rfft`` implementation wraps around from ``os.cpu_count()``).
+    #: all available logical CPUs will be considered (``scipy.fft.rfft`` implementation wraps around
+    #: from ``os.cpu_count()``).
     #: Default is `None` (handled by scipy)
     workers = Union(Int(), None, default_value=None, desc='number of workers to use')
 
@@ -46,18 +50,18 @@ class RFFT(BaseSpectra, SpectraOut):
     #: Default is :code:`none`.
     #: 'energy': compensates for the energy loss due to truncation of the FFT result. The resulting
     #: one-sided spectrum is multiplied by 2.0, except for the DC and Nyquist frequency.
-    #: 'amplitude': scales the one-sided spectrum so that the amplitude of discrete tones does not depend
-    #: on the block size.
+    #: 'amplitude': scales the one-sided spectrum so that the amplitude of discrete tones does not
+    #: depend on the block size.
     scaling = Enum('none', 'energy', 'amplitude')
 
     #: block size of the FFT. Default is 1024.
     block_size = Property()
 
     #: Number of frequencies in the output.
-    numfreqs = Property(depends_on='_block_size')
+    num_freqs = Property(depends_on=['_block_size'])
 
     #: Number of snapshots in the output.
-    numsamples = Property(depends_on='source.numsamples, _block_size')
+    num_samples = Property(depends_on=['source.num_samples', '_block_size'])
 
     #: 1-D array of FFT sample frequencies.
     freqs = Property()
@@ -73,13 +77,13 @@ class RFFT(BaseSpectra, SpectraOut):
         return digest(self)
 
     @cached_property
-    def _get_numfreqs(self):
+    def _get_num_freqs(self):
         return int(self.block_size / 2 + 1)
 
     @cached_property
-    def _get_numsamples(self):
-        if self.source.numsamples >= 0:
-            return int(np.floor(self.source.numsamples / self.block_size))
+    def _get_num_samples(self):
+        if self.source.num_samples >= 0:
+            return int(np.floor(self.source.num_samples / self.block_size))
         return -1
 
     def _get_block_size(self):
@@ -122,7 +126,7 @@ class RFFT(BaseSpectra, SpectraOut):
 
         Returns
         -------
-        Spectra block of shape (num, :attr:`numchannels`*:attr:`numfreqs`).
+        Spectra block of shape (num, :attr:`num_channels` * :attr:`num_freqs`).
             The last block may be shorter than num.
 
         """
@@ -132,7 +136,7 @@ class RFFT(BaseSpectra, SpectraOut):
         elif self.scaling == 'amplitude':  # compensates for the window and the energy loss
             svalue = 1 / wind.sum()
         wind = wind[:, np.newaxis]
-        fftdata = np.zeros((num, self.numchannels * self.numfreqs), dtype=self.precision)
+        fftdata = np.zeros((num, self.num_channels * self.num_freqs), dtype=self.precision)
         j = 0
         for i, data in enumerate(self._get_source_data()):  # yields one block of time data
             j = i % num
@@ -146,6 +150,7 @@ class RFFT(BaseSpectra, SpectraOut):
             yield fftdata[: j + 1]
 
 
+@deprecated_alias({'numsamples': 'num_samples'}, read_only=True)
 class IRFFT(TimeOut):
     """Calculates the inverse Fast Fourier Transform (IFFT) for one-sided multi-channel spectra."""
 
@@ -153,16 +158,17 @@ class IRFFT(TimeOut):
     source = Instance(SpectraGenerator)
 
     #: Number of workers to use for the FFT calculation. If negative values are used,
-    #: all available logical CPUs will be considered (``scipy.fft.rfft`` implementation wraps around from ``os.cpu_count()``).
+    #: all available logical CPUs will be considered (``scipy.fft.rfft`` implementation wraps around
+    #: from ``os.cpu_count()``).
     #: Default is `None` (handled by scipy)
     workers = Union(Int(), None, default_value=None, desc='number of workers to use')
 
     #: The floating-number-precision of the resulting time signals, corresponding to numpy dtypes.
     #: Default is 64 bit.
-    precision = Trait('float64', 'float32', desc='precision of the time signal after the ifft')
+    precision = Enum('float64', 'float32', desc='precision of the time signal after the ifft')
 
     #: Number of time samples in the output.
-    numsamples = Property(depends_on='source.numsamples, source._block_size')
+    num_samples = Property(depends_on=['source.num_samples', 'source._block_size'])
 
     # internal time signal buffer to handle arbitrary output block sizes
     _buffer = CArray(desc='signal buffer')
@@ -170,9 +176,9 @@ class IRFFT(TimeOut):
     # internal identifier
     digest = Property(depends_on=['source.digest', 'scaling', 'precision', '_block_size', 'window', 'overlap'])
 
-    def _get_numsamples(self):
-        if self.source.numsamples >= 0:
-            return int(self.source.numsamples * self.source.block_size)
+    def _get_num_samples(self):
+        if self.source.num_samples >= 0:
+            return int(self.source.num_samples * self.source.block_size)
         return -1
 
     @cached_property
@@ -186,9 +192,9 @@ class IRFFT(TimeOut):
                 'This is likely due to incomplete spectral data from which the inverse FFT cannot be calculated.'
             )
             raise ValueError(msg)
-        if (self.source.numfreqs - 1) * 2 != self.source.block_size:
+        if (self.source.num_freqs - 1) * 2 != self.source.block_size:
             msg = (
-                f'Block size must be 2*(numfreqs-1) but is {self.source.block_size}.'
+                f'Block size must be 2*(num_freqs-1) but is {self.source.block_size}.'
                 'This is likely due to incomplete spectral data from which the inverse FFT cannot be calculated.'
             )
             raise ValueError(msg)
@@ -208,7 +214,7 @@ class IRFFT(TimeOut):
         Yields
         ------
         numpy.ndarray
-            Yields blocks of shape (num, numchannels).
+            Yields blocks of shape (num, num_channels).
         """
         self._validate()
         bs = self.source.block_size
@@ -219,7 +225,7 @@ class IRFFT(TimeOut):
         else:
             for spectra in self.source.result(1):
                 yield fft.irfft(
-                    spectra.reshape(self.source.numfreqs, self.numchannels), n=num, axis=0, workers=self.workers
+                    spectra.reshape(self.source.num_freqs, self.num_channels), n=num, axis=0, workers=self.workers
                 )
 
 
@@ -237,7 +243,7 @@ class AutoPowerSpectra(SpectraOut):
     single_sided = Bool(True, desc='single sided spectrum')
 
     #: The floating-number-precision of entries, corresponding to numpy dtypes. Default is 64 bit.
-    precision = Trait('float64', 'float32', desc='floating-number-precision')
+    precision = Enum('float64', 'float32', desc='floating-number-precision')
 
     # internal identifier
     digest = Property(depends_on=['source.digest', 'precision', 'scaling', 'single_sided'])
@@ -265,7 +271,7 @@ class AutoPowerSpectra(SpectraOut):
         Yields
         ------
         numpy.ndarray
-            Yields blocks of shape (num, numchannels*numfreqs).
+            Yields blocks of shape (num, num_channels * num_freqs).
             The last block may be shorter than num.
 
         """
@@ -274,38 +280,40 @@ class AutoPowerSpectra(SpectraOut):
             yield ((temp * temp.conjugate()).real * scale).astype(self.precision)
 
 
+@deprecated_alias({'numchannels': 'num_channels'}, read_only=True)
 class CrossPowerSpectra(AutoPowerSpectra):
     """Calculates the complex-valued auto- and cross-power spectra.
 
-    Receives the complex-valued spectra from the source and returns the cross-spectral matrix (CSM) in a flattened
-    representation (i.e. the auto- and cross-power spectra are concatenated along the last axis).
-    If :attr:`calc_mode` is 'full', the full CSM is calculated, if 'upper', only the upper triangle is calculated.
+    Receives the complex-valued spectra from the source and returns the cross-spectral matrix (CSM)
+    in a flattened representation (i.e. the auto- and cross-power spectra are concatenated along the
+    last axis). If :attr:`calc_mode` is 'full', the full CSM is calculated, if 'upper', only the
+    upper triangle is calculated.
     """
 
     #: Data source; :class:`~acoular.base.SpectraGenerator` or derived object.
-    source = Trait(SpectraGenerator)
+    source = Instance(SpectraGenerator)
 
     #: The floating-number-precision of entries of csm, eigenvalues and
     #: eigenvectors, corresponding to numpy dtypes. Default is 64 bit.
-    precision = Trait('complex128', 'complex64', desc='precision of the fft')
+    precision = Enum('complex128', 'complex64', desc='precision of the fft')
 
     #: Calculation mode, either 'full' or 'upper'.
     #: 'full' calculates the full cross-spectral matrix, 'upper' calculates
     # only the upper triangle. Default is 'full'.
-    calc_mode = Trait('full', 'upper', 'lower', desc='calculation mode')
+    calc_mode = Enum('full', 'upper', 'lower', desc='calculation mode')
 
     #: Number of channels in output. If :attr:`calc_mode` is 'full', then
-    #: :attr:`numchannels` is :math:`n^2`, where :math:`n` is the number of
+    #: :attr:`num_channels` is :math:`n^2`, where :math:`n` is the number of
     #: channels in the input. If :attr:`calc_mode` is 'upper', then
-    #: :attr:`numchannels` is :math:`n + n(n-1)/2`.
-    numchannels = Property(depends_on='source.numchannels')
+    #: :attr:`num_channels` is :math:`n + n(n-1)/2`.
+    num_channels = Property(depends_on=['source.num_channels'])
 
     # internal identifier
     digest = Property(depends_on=['source.digest', 'precision', 'scaling', 'single_sided', 'calc_mode'])
 
     @cached_property
-    def _get_numchannels(self):
-        n = self.source.numchannels
+    def _get_num_channels(self):
+        n = self.source.num_channels
         return n**2 if self.calc_mode == 'full' else int(n + n * (n - 1) / 2)
 
     @cached_property
@@ -324,11 +332,11 @@ class CrossPowerSpectra(AutoPowerSpectra):
         Yields
         ------
         numpy.ndarray
-            Yields blocks of shape (num, numchannels*numfreq).
+            Yields blocks of shape (num, num_channels * num_freqs).
         """
-        nc_src = self.source.numchannels
-        nc = self.numchannels
-        nf = self.numfreqs
+        nc_src = self.source.num_channels
+        nc = self.num_channels
+        nf = self.num_freqs
         scale = self._get_scaling_value()
 
         csm_flat = np.zeros((num, nc * nf), dtype=self.precision)
@@ -345,7 +353,7 @@ class CrossPowerSpectra(AutoPowerSpectra):
                 else:  # lower
                     csm_lower = csm_upper.conj().transpose(0, 2, 1)
                     csm_flat[i] = csm_lower[:, :nc].reshape(-1)
-                csm_upper[...] = 0  # calcCSM adds cummulative
+                csm_upper[...] = 0  # calcCSM adds cumulative
             yield csm_flat[: i + 1] * scale
 
 

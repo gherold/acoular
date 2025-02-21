@@ -24,8 +24,8 @@
 """
 
 # imports from other packages
-from os import path
-from warnings import warn
+import xml.dom.minidom
+from abc import abstractmethod
 
 from numpy import (
     absolute,
@@ -45,7 +45,7 @@ from numpy import (
     ones,
     ones_like,
     s_,
-    sum,
+    sum,  # noqa: A004
     tile,
     unique,
     where,
@@ -56,24 +56,28 @@ from scipy.linalg import norm
 # from matplotlib.path import Path
 from scipy.spatial import Delaunay
 from traits.api import (
+    ABCHasStrictTraits,
     Bool,
     CArray,
     File,
     Float,
-    HasPrivateTraits,
     Instance,
     Int,
     List,
     Property,
+    Str,
     Tuple,
     Union,
     cached_property,
+    observe,
     on_trait_change,
     property_depends_on,
 )
 from traits.trait_errors import TraitError
 
-from .internal import digest
+# acoular imports
+from .deprecation import deprecated_alias
+from .internal import digest, ldigest
 
 
 def in_hull(p, hull, border=True, tol=0):
@@ -252,12 +256,13 @@ class Polygon:
         return mindst
 
 
-class Grid(HasPrivateTraits):
+@deprecated_alias({'gpos': 'pos'})
+class Grid(ABCHasStrictTraits):
     """Virtual base class for grid geometries.
 
     Defines the common interface for all grid classes and
     provides facilities to query grid properties and related data. This class
-    may be used as a base for specialized grid implementaions. It should not
+    may be used as a base for specialized grid implementations. It should not
     be used directly as it contains no real functionality.
     """
 
@@ -271,45 +276,32 @@ class Grid(HasPrivateTraits):
 
     #: Grid positions as (3, :attr:`size`) array of floats, without invalid
     #: microphones; readonly.
-    gpos = Property(desc='x, y, z positions of grid points')
+    pos = Property(desc='x, y, z positions of grid points')
 
     # internal identifier
     digest = Property
 
+    @abstractmethod
     def _get_digest(self):
-        return ''
+        """Returns the digest of the grid object."""
 
     # 'digest' is a placeholder for other properties in derived classes,
     # necessary to trigger the depends on mechanism
-    @property_depends_on('digest')
+    @property_depends_on(['digest'])
+    @abstractmethod
     def _get_size(self):
-        return 1
+        """Returns the number of grid points."""
 
     # 'digest' is a placeholder for other properties in derived classes
-    @property_depends_on('digest')
+    @property_depends_on(['digest'])
+    @abstractmethod
     def _get_shape(self):
-        return (1, 1)
+        """Returns the shape of the grid as a Tuple."""
 
-    @property_depends_on('digest')
-    def _get_gpos(self):
-        return array([[0.0], [0.0], [0.0]])
-
-    def pos(self):
-        """Calculates grid co-ordinates.
-        Deprecated; use :attr:`gpos` attribute instead.
-        The :meth:`pos` method will be removed in version 25.01.
-
-        Returns
-        -------
-        array of floats of shape (3, :attr:`size`)
-            The grid point x, y, z-coordinates in one array.
-
-        """
-        msg = (
-            "The 'pos' method is deprecated and will be removed in version 25.01. " "Use the 'gpos' attribute instead."
-        )
-        warn(msg, DeprecationWarning, stacklevel=2)
-        return self.gpos  # array([[0.], [0.], [0.]])
+    @property_depends_on(['digest'])
+    @abstractmethod
+    def _get_pos(self):
+        """Returns the grid positions as (3, size) array of floats."""
 
     def subdomain(self, sector):
         """Queries the indices for a subdomain in the grid.
@@ -328,13 +320,14 @@ class Grid(HasPrivateTraits):
             an array with the same shape as the grid.
 
         """
-        xpos = self.gpos
+        xpos = self.pos
         # construct grid-shaped array with "True" entries where sector is
         xyi = sector.contains(xpos).reshape(self.shape)
         # return indices of "True" entries
         return where(xyi)
 
 
+@deprecated_alias({'gpos': 'pos'}, read_only=True)
 class RectGrid(Grid):
     """Provides a cartesian 2D grid for the beamforming results.
 
@@ -372,22 +365,22 @@ class RectGrid(Grid):
         depends_on=['x_min', 'x_max', 'y_min', 'y_max', 'z', 'increment'],
     )
 
-    @property_depends_on('nxsteps, nysteps')
+    @property_depends_on(['nxsteps', 'nysteps'])
     def _get_size(self):
         return self.nxsteps * self.nysteps
 
-    @property_depends_on('nxsteps, nysteps')
+    @property_depends_on(['nxsteps', 'nysteps'])
     def _get_shape(self):
         return (self.nxsteps, self.nysteps)
 
-    @property_depends_on('x_min, x_max, increment')
+    @property_depends_on(['x_min', 'x_max', 'increment'])
     def _get_nxsteps(self):
         i = abs(self.increment)
         if i != 0:
             return int(round((abs(self.x_max - self.x_min) + i) / i))
         return 1
 
-    @property_depends_on('y_min, y_max, increment')
+    @property_depends_on(['y_min', 'y_max', 'increment'])
     def _get_nysteps(self):
         i = abs(self.increment)
         if i != 0:
@@ -398,8 +391,8 @@ class RectGrid(Grid):
     def _get_digest(self):
         return digest(self)
 
-    @property_depends_on('x_min, x_max, y_min, y_max, increment')
-    def _get_gpos(self):
+    @property_depends_on(['x_min', 'x_max', 'y_min', 'y_max', 'increment'])
+    def _get_pos(self):
         """Calculates grid co-ordinates.
 
         Returns
@@ -456,7 +449,7 @@ class RectGrid(Grid):
         x1, y1, x2, y2, ... : float
             If three parameters are given, then a circular sector is assumed
             that is given by its center (x1, y1) and the radius x2.
-            If four paramters are given, then a rectangular sector is
+            If four parameters are given, then a rectangular sector is
             assumed that is given by two corners (x1, y1) and (x2, y2).
             If more parameters are given, the subdomain is assumed to have
             polygonial shape with corners at (x_n, y_n).
@@ -469,7 +462,7 @@ class RectGrid(Grid):
 
         """
         if len(r) == 3:  # only 3 values given -> use x,y,radius method
-            xpos = self.gpos
+            xpos = self.pos
             xis = []
             yis = []
             dr2 = (xpos[0, :] - r[0]) ** 2 + (xpos[1, :] - r[1]) ** 2
@@ -486,7 +479,7 @@ class RectGrid(Grid):
             xi1, yi1 = self.index(min(r[0], r[2]), min(r[1], r[3]))
             xi2, yi2 = self.index(max(r[0], r[2]), max(r[1], r[3]))
             return s_[xi1 : xi2 + 1], s_[yi1 : yi2 + 1]
-        xpos = self.gpos
+        xpos = self.pos
         xis = []
         yis = []
         # replaced matplotlib Path by numpy
@@ -563,53 +556,34 @@ class RectGrid3D(RectGrid):
         else:
             raise (TraitError(args=self, name='increment', info='Float or CArray(3,)', value=increment))
 
-    # Respective increments in x,y, and z-direction (in m).
-    # Deprecated: Use :attr:`~RectGrid.increment` for this functionality
-    increment3D = Property(desc='3D step sizes')  # noqa N815
-
-    def _get_increment3D(self):  # noqa N802
-        msg = "Using 'increment3D' is deprecated and will be removed in version 25.01." "Use 'increment' instead."
-        warn(msg, DeprecationWarning, stacklevel=2)
-        if isscalar(self._increment):
-            return array([self._increment, self._increment, self._increment])
-        return self._increment
-
-    def _set_increment3D(self, inc):  # noqa N802
-        msg = "Using 'increment3D' is deprecated and will be removed in version 25.01." "Use 'increment' instead."
-        warn(msg, DeprecationWarning, stacklevel=2)
-        if not isscalar(inc) and len(inc) == 3:
-            self._increment = array(inc, dtype=float)
-        else:
-            raise (TraitError(args=self, name='increment3D', info='CArray(3,)', value=inc))
-
     # internal identifier
     digest = Property(
         depends_on=['x_min', 'x_max', 'y_min', 'y_max', 'z_min', 'z_max', '_increment'],
     )
 
-    @property_depends_on('nxsteps, nysteps, nzsteps')
+    @property_depends_on(['nxsteps', 'nysteps', 'nzsteps'])
     def _get_size(self):
         return self.nxsteps * self.nysteps * self.nzsteps
 
-    @property_depends_on('nxsteps, nysteps, nzsteps')
+    @property_depends_on(['nxsteps', 'nysteps', 'nzsteps'])
     def _get_shape(self):
         return (self.nxsteps, self.nysteps, self.nzsteps)
 
-    @property_depends_on('x_min, x_max, _increment')
+    @property_depends_on(['x_min', 'x_max', '_increment'])
     def _get_nxsteps(self):
         i = abs(self.increment) if isscalar(self.increment) else abs(self.increment[0])
         if i != 0:
             return int(round((abs(self.x_max - self.x_min) + i) / i))
         return 1
 
-    @property_depends_on('y_min, y_max, _increment')
+    @property_depends_on(['y_min', 'y_max', '_increment'])
     def _get_nysteps(self):
         i = abs(self.increment) if isscalar(self.increment) else abs(self.increment[1])
         if i != 0:
             return int(round((abs(self.y_max - self.y_min) + i) / i))
         return 1
 
-    @property_depends_on('z_min, z_max, _increment')
+    @property_depends_on(['z_min', 'z_max', '_increment'])
     def _get_nzsteps(self):
         i = abs(self.increment) if isscalar(self.increment) else abs(self.increment[2])
         if i != 0:
@@ -617,7 +591,7 @@ class RectGrid3D(RectGrid):
         return 1
 
     @property_depends_on('digest')
-    def _get_gpos(self):
+    def _get_pos(self):
         """Calculates grid co-ordinates.
 
         Returns
@@ -698,25 +672,19 @@ class RectGrid3D(RectGrid):
         return s_[xi1 : xi2 + 1], s_[yi1 : yi2 + 1], s_[zi1 : zi2 + 1]
 
 
+@deprecated_alias({'from_file': 'file', 'gpos_file': 'pos'})
 class ImportGrid(Grid):
     """Loads a 3D grid from xml file."""
 
-    #: Name of the .xml-file from wich to read the data.
-    from_file = File(filter=['*.xml'], desc='name of the xml file to import')
+    #: Name of the .xml-file from which to read the data.
+    file = File(filter=['*.xml'], exists=True, desc='name of the xml file to import')
 
-    gpos_file = CArray(dtype=float, desc='x, y, z position of all Grid Points')
+    _gpos = CArray(dtype=float, desc='x, y, z position of all Grid Points')
 
-    #: Basename of the .xml-file, without the extension; is set automatically / readonly.
-    basename = Property(depends_on='from_file', desc='basename of xml file')
+    subgrids = CArray(desc='names of subgrids for each point')
 
     # internal identifier
-    digest = Property(
-        depends_on=['from_file'],
-    )
-
-    @cached_property
-    def _get_basename(self):
-        return path.splitext(path.basename(self.from_file))[0]
+    digest = Property(depends_on=['_gpos'])
 
     @cached_property
     def _get_digest(self):
@@ -724,42 +692,36 @@ class ImportGrid(Grid):
 
     # 'digest' is a placeholder for other properties in derived classes,
     # necessary to trigger the depends on mechanism
-    @property_depends_on('basename')
+    @property_depends_on(['_gpos'])
     def _get_size(self):
-        return self.gpos.shape[-1]
+        return self.pos.shape[-1]
 
     # 'digest' is a placeholder for other properties in derived classes
-    @property_depends_on('basename')
+    @property_depends_on(['_gpos'])
     def _get_shape(self):
-        return (self.gpos.shape[-1],)
+        return (self.pos.shape[-1],)
 
-    @property_depends_on('basename')
-    def _get_gpos(self):
-        return self.gpos_file
+    @property_depends_on(['_gpos'])
+    def _get_pos(self):
+        return self._gpos
 
-    subgrids = CArray(desc='names of subgrids for each point')
+    def _set_pos(self, pos):
+        self._gpos = pos
 
-    @on_trait_change('basename')
+    @on_trait_change('file')
     def import_gpos(self):
-        """Import the the grid point locations from .xml file.
-        Called when :attr:`basename` changes.
-        """
-        if not path.isfile(self.from_file):
-            # no file there
-            self.gpos_file = array([], 'd')
-            return
-        import xml.dom.minidom
-
-        doc = xml.dom.minidom.parse(self.from_file)
+        """Import the the grid point locations from .xml file when :attr:`file` changes."""
+        doc = xml.dom.minidom.parse(self.file)
         names = []
         xyz = []
         for el in doc.getElementsByTagName('pos'):
             names.append(el.getAttribute('subgrid'))
             xyz.append([float(el.getAttribute(a)) for a in 'xyz'])
-        self.gpos_file = array(xyz, 'd').swapaxes(0, 1)
+        self._gpos = array(xyz, 'd').swapaxes(0, 1)
         self.subgrids = array(names)
 
 
+@deprecated_alias({'gpos': 'pos', 'numpoints': 'num_points'}, read_only=['gpos'])
 class LineGrid(Grid):
     """Class for Line grid geometries."""
 
@@ -773,7 +735,7 @@ class LineGrid(Grid):
     length = Float(1, desc='length of the line source')
 
     #:number of grid points.
-    numpoints = Int(1, desc='length of the line source')
+    num_points = Int(1, desc='length of the line source')
 
     #: Overall number of grid points. Readonly; is set automatically when
     #: other grid defining properties are set
@@ -781,10 +743,10 @@ class LineGrid(Grid):
 
     #: Grid positions as (3, :attr:`size`) array of floats, without invalid
     #: microphones; readonly.
-    gpos = Property(desc='x, y, z positions of grid points')
+    pos = Property(desc='x, y, z positions of grid points')
 
     digest = Property(
-        depends_on=['loc', 'direction', 'length', 'numpoints', 'size'],
+        depends_on=['loc', 'direction', 'length', 'num_points', 'size'],
     )
 
     @cached_property
@@ -793,26 +755,27 @@ class LineGrid(Grid):
 
     # 'digest' is a placeholder for other properties in derived classes,
     # necessary to trigger the depends on mechanism
-    @property_depends_on('numpoints')
+    @property_depends_on(['num_points'])
     def _get_size(self):
-        return self.gpos.shape[-1]
+        return self.pos.shape[-1]
 
     # 'digest' is a placeholder for other properties in derived classes
-    @property_depends_on('numpoints')
+    @property_depends_on(['num_points'])
     def _get_shape(self):
-        return self.gpos.shape[-1]
+        return self.pos.shape[-1]
 
-    @property_depends_on('numpoints,length,direction,loc')
-    def _get_gpos(self):
-        dist = self.length / (self.numpoints - 1)
+    @property_depends_on(['num_points', 'length', 'direction', 'loc'])
+    def _get_pos(self):
+        dist = self.length / (self.num_points - 1)
         loc = array(self.loc, dtype=float).reshape((3, 1))
         direc_n = array(self.direction) / norm(self.direction)
-        pos = zeros((self.numpoints, 3))
-        for s in range(self.numpoints):
+        pos = zeros((self.num_points, 3))
+        for s in range(self.num_points):
             pos[s] = loc.T + direc_n * dist * s
         return pos.T
 
 
+@deprecated_alias({'gpos': 'pos'}, read_only=True)
 class MergeGrid(Grid):
     """Base class for merging different grid geometries."""
 
@@ -821,7 +784,7 @@ class MergeGrid(Grid):
     #: other grid defining properties are set
     grids = List(desc='list of grids')
 
-    grid_digest = Property(desc='digest of the merged grids')
+    grid_digest = Str(desc='digest of the merged grids')
 
     subgrids = Property(desc='names of subgrids for each point')
 
@@ -834,46 +797,41 @@ class MergeGrid(Grid):
     def _get_digest(self):
         return digest(self)
 
-    @cached_property
-    def _get_grid_digest(self):
-        griddigest = []
-        for grid in self.grids:
-            griddigest.append(grid.digest)
-        return griddigest
+    @observe('grids.items.digest')
+    def _set_sourcesdigest(self, event):  # noqa ARG002
+        self.grid_digest = ldigest(self.grids)
 
     # 'digest' is a placeholder for other properties in derived classes,
     # necessary to trigger the depends on mechanism
-    @property_depends_on('digest')
+    @property_depends_on(['digest'])
     def _get_size(self):
-        return self.gpos.shape[-1]
+        return self.pos.shape[-1]
 
     # 'digest' is a placeholder for other properties in derived classes
-    @property_depends_on('digest')
+    @property_depends_on(['digest'])
     def _get_shape(self):
-        return self.gpos.shape[-1]
+        return self.pos.shape[-1]
 
-    @property_depends_on('digest')
+    @property_depends_on(['digest'])
     def _get_subgrids(self):
         subgrids = zeros((1, 0), dtype=str)
         for grid in self.grids:
             subgrids = append(subgrids, tile(grid.__class__.__name__ + grid.digest, grid.size))
         return subgrids[:, newaxis].T
 
-    @property_depends_on('digest')
-    def _get_gpos(self):
+    @property_depends_on(['digest'])
+    def _get_pos(self):
         bpos = zeros((3, 0))
-        # subgrids = zeros((1,0))
         for grid in self.grids:
-            bpos = append(bpos, grid.gpos, axis=1)
-            # subgrids = append(subgrids,str(grid))
+            bpos = append(bpos, grid.pos, axis=1)
         return unique(bpos, axis=1)
 
 
-class Sector(HasPrivateTraits):
+class Sector(ABCHasStrictTraits):
     """Base class for all sector types.
 
     Defines the common interface for all tbdsector classes. This class
-    may be used as a base for diverse sector implementaions. If used
+    may be used as a base for diverse sector implementations. If used
     directly, it implements a sector encompassing the whole grid.
     """
 
@@ -902,7 +860,7 @@ class SingleSector(Sector):
     """Base class for single sector types.
 
     Defines the common interface for all single sector classes. This class
-    may be used as a base for diverse single sector implementaions. If used
+    may be used as a base for diverse single sector implementations. If used
     directly, it implements a sector encompassing the whole grid.
     """
 
@@ -912,14 +870,15 @@ class SingleSector(Sector):
     #: Absolute tolerance for sector border
     abs_tol = Float(1e-12, desc='absolute tolerance for sector border')
 
-    #: Boolean flag, if 'True' (default), the nearest grid point is returned if none is inside the sector.
+    #: Boolean flag, if 'True' (default), the nearest grid point is returned if None is inside the
+    #: sector.
     default_nearest = Bool(True, desc='return nearest grid point to center of none inside sector')
 
 
 class RectSector(SingleSector):
     """Class for defining a rectangular sector.
 
-    Can be used for 2D Grids for definining a rectangular sector or
+    Can be used for 2D Grids for defining a rectangular sector or
     for 3D grids for a rectangular cylinder sector parallel to the z-axis.
     """
 
@@ -990,7 +949,7 @@ class RectSector(SingleSector):
 class RectSector3D(RectSector):
     """Class for defining a cuboid sector.
 
-    Can be used for 3D Grids for definining a cuboid sector.
+    Can be used for 3D Grids for defining a cuboid sector.
     """
 
     #: The lower z position of the cuboid
@@ -1060,7 +1019,7 @@ class RectSector3D(RectSector):
 class CircSector(SingleSector):
     """Class for defining a circular sector.
 
-    Can be used for 2D Grids for definining a circular sector or
+    Can be used for 2D Grids for defining a circular sector or
     for 3D grids for a cylindrical sector parallel to the z-axis.
     """
 
@@ -1096,7 +1055,7 @@ class CircSector(SingleSector):
         # which points are in the circle?
         inds = dr2 - self.r**2 < self.abs_tol if self.include_border else dr2 - self.r**2 < -self.abs_tol
 
-        # if there's no poit inside
+        # if there's no point inside
         if ~inds.any() and self.default_nearest:
             inds[argmin(dr2)] = True
 
@@ -1106,17 +1065,16 @@ class CircSector(SingleSector):
 class PolySector(SingleSector):
     """Class for defining a polygon sector.
 
-    Can be used for 2D Grids for definining a polygon sector.
+    Can be used for 2D Grids for defining a polygon sector.
     """
 
     # x1, y1, x2, y2, ... xn, yn :
     edges = List(Float)
 
     def contains(self, pos):
-        """Queries whether the coordinates in a given array lie within the
-        ploygon sector.
-        If no coordinate is inside, the nearest one to the rectangle center
-        is returned if :attr:`~Sector.default_nearest` is True.
+        """Queries whether the coordinates in a given array lie within the polygon sector. If no
+        coordinate is inside, the nearest one to the rectangle center is returned if
+        :attr:`~Sector.default_nearest` is True.
 
         Parameters
         ----------
@@ -1146,7 +1104,7 @@ class PolySector(SingleSector):
 class ConvexSector(SingleSector):
     """Class for defining a convex hull sector.
 
-    Can be used for 2D Grids for definining a convex hull sector.
+    Can be used for 2D Grids for defining a convex hull sector.
     """
 
     # x1, y1, x2, y2, ... xn, yn :

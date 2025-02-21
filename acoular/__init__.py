@@ -9,7 +9,7 @@ import os  # noqa: I001
 # config must be imported before any submodules containing numpy, see #322.
 from .configuration import config
 
-from . import demo, tools
+from . import demo, tools, aiaa
 from .base import (
     Generator,
     InOut,
@@ -109,6 +109,8 @@ from .sdinput import SoundDeviceSamplesGenerator
 from .signals import (
     FiltWNoiseGenerator,
     GenericSignalGenerator,
+    NoiseGenerator,
+    PeriodicSignalGenerator,
     PNoiseGenerator,
     SignalGenerator,
     SineGenerator,
@@ -128,7 +130,8 @@ from .sources import (
     TimeSamples,
     UncorrelatedNoiseSource,
 )
-from .spectra import BaseSpectra, PowerSpectra, PowerSpectraImport, synthetic
+from .tools.helpers import synthetic
+from .spectra import BaseSpectra, PowerSpectra, PowerSpectraImport
 from .spectra import PowerSpectra as EigSpectra
 from .tbeamform import (
     BeamformerCleant,

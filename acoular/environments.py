@@ -16,6 +16,8 @@
 
 """
 
+from abc import abstractmethod
+
 import numba as nb
 from numpy import (
     arange,
@@ -39,7 +41,7 @@ from numpy import (
     sign,
     sin,
     sqrt,
-    sum,
+    sum,  # noqa: A004
     vstack,
     zeros_like,
 )
@@ -47,7 +49,18 @@ from scipy.integrate import ode
 from scipy.interpolate import LinearNDInterpolator
 from scipy.linalg import norm
 from scipy.spatial import ConvexHull
-from traits.api import CArray, Dict, Float, HasPrivateTraits, Int, Property, Trait, cached_property
+from traits.api import (
+    ABCHasStrictTraits,
+    CArray,
+    Dict,
+    Float,
+    HasStrictTraits,
+    Instance,
+    Int,
+    Property,
+    Union,
+    cached_property,
+)
 
 from .internal import digest
 
@@ -56,7 +69,7 @@ f32ro = nb.types.Array(nb.types.float32, 2, 'C', readonly=True)
 
 
 @nb.njit([(f64ro, f64ro), (f64ro, f32ro), (f32ro, f64ro), (f32ro, f32ro)], cache=True, fastmath=True)
-def dist_mat(gpos, mpos):
+def dist_mat(gpos, mpos):  # pragma: no cover
     """Computes distance matrix, accelerated with numba.
 
     Args:
@@ -140,7 +153,7 @@ def cylToCart(x, Q=None):  # noqa: N802, N803
     return array([x[1] * sin(x[0]), x[1] * cos(x[0]), x[2]])
 
 
-class Environment(HasPrivateTraits):
+class Environment(HasStrictTraits):
     """A simple acoustic environment without flow.
 
     This class provides the facilities to calculate the travel time (distances)
@@ -156,7 +169,7 @@ class Environment(HasPrivateTraits):
     c = Float(343.0, desc='speed of sound')
 
     #: The region of interest (ROI), not needed for most types of environment
-    roi = Trait(None, (None, CArray))
+    roi = Union(None, CArray)
 
     def _get_digest(self):
         return digest(self)
@@ -252,17 +265,18 @@ class UniformFlowEnvironment(Environment):
         return rm
 
 
-class FlowField(HasPrivateTraits):
+class FlowField(ABCHasStrictTraits):
     """An abstract base class for a spatial flow field."""
 
     digest = Property
 
+    @abstractmethod
     def _get_digest(self):
-        return ''
+        pass
 
+    @abstractmethod
     def v(self, xx):  # noqa: ARG002
-        """Provides the flow field as a function of the location. This is
-        implemented here for the possibly most simple case: a quiescent fluid.
+        """Provides the flow field as a function of the location.
 
         Parameters
         ----------
@@ -271,15 +285,13 @@ class FlowField(HasPrivateTraits):
 
         Returns
         -------
-        tuple with two elements
-            The first element in the tuple is the velocity vector and the
-            second is the Jacobian of the velocity vector field, both at the
-            given location.
-
+        tuple
+            A tuple with two elements:
+            - velocity_vector : array of floats of shape (3, )
+                The velocity vector at the given location.
+            - jacobian_matrix : array of floats of shape (3, 3)
+                The Jacobian matrix of the velocity vector field at the given location.
         """
-        v = array((0.0, 0.0, 0.0))
-        dv = array(((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
-        return -v, -dv
 
 
 class SlotJet(FlowField):
@@ -443,7 +455,7 @@ class OpenJet(FlowField):
 
 
 class RotatingFlow(FlowField):
-    """Provides an analytical approximation of the flow field of a rotating fluid with constant flow."""
+    """Analytical approximation of the flow field of a rotating fluid with constant flow."""
 
     #: Exit velocity at jet origin, i.e. the nozzle. Defaults to 0.
     rpm = Float(0.0, desc='revolutions per minute of the virtual array; negative values for clockwise rotation')
@@ -545,7 +557,7 @@ class GeneralFlowEnvironment(Environment):
     """
 
     #: The flow field, must be of type :class:`~acoular.environments.FlowField`.
-    ff = Trait(FlowField, desc='flow field')
+    ff = Instance(FlowField, desc='flow field')
 
     #: Number of rays used per solid angle :math:`\Omega`, defaults to 200.
     N = Int(200, desc='number of rays per Om')

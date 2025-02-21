@@ -3,9 +3,9 @@
 # ------------------------------------------------------------------------------
 """Implements base classes for signal processing blocks in Acoular.
 
-The classes in this module are abstract base classes that provide a common interface for all classes that generate an
-output via the generator :meth:`result` in block-wise manner. They are not intended to be used directly, but to be
-subclassed by classes that implement the actual signal processing.
+The classes in this module are abstract base classes that provide a common interface for all classes
+that generate an output via the generator :meth:`result` in block-wise manner. They are not intended
+to be used directly, but to be subclassed by classes that implement the actual signal processing.
 
 .. autosummary::
     :toctree: generated/
@@ -19,42 +19,54 @@ subclassed by classes that implement the actual signal processing.
     TimeInOut
 """
 
+from abc import abstractmethod
+
 from traits.api import (
+    ABCHasStrictTraits,
     CArray,
-    CLong,
+    CInt,
     Delegate,
     Float,
-    HasPrivateTraits,
     Instance,
     Property,
     cached_property,
 )
 
-from acoular.internal import digest
+# acoular imports
+from .deprecation import deprecated_alias
+from .internal import digest
 
 
-class Generator(HasPrivateTraits):
+@deprecated_alias({'numchannels': 'num_channels', 'numsamples': 'num_samples'})
+class Generator(ABCHasStrictTraits):
     """Interface for any generating signal processing block.
 
-    It provides a common interface for all classes, which generate an output via the generator :meth:`result`
-    in block-wise manner. It has a common set of traits that are used by all classes that implement this interface.
-    This includes the sampling frequency of the signal (:attr:`sample_freq`) and the number of samples (:attr:`numsamples`).
-    A private trait :attr:`digest` is used to store the internal identifier of the object, which is a hash of the object's
-    attributes. This is used to check if the object's internal state has changed.
+    It provides a common interface for all classes, which generate an output via the generator
+    :meth:`result` in block-wise manner. It has a common set of traits that are used by all classes
+    that implement this interface. This includes the sampling frequency of the signal
+    (:attr:`sample_freq`), the number of samples (:attr:`num_samples`), and the number of channels
+    (:attr:`num_channels`). A private trait :attr:`digest` is used to store the internal identifier
+    of the object, which is a hash of the object's attributes.
+    This is used to check if the object's internal state has changed.
+
     """
 
     #: Sampling frequency of the signal, defaults to 1.0
     sample_freq = Float(1.0, desc='sampling frequency')
 
     #: Number of signal samples
-    numsamples = CLong
+    num_samples = CInt
+
+    #: Number of channels
+    num_channels = CInt
 
     # internal identifier
-    digest = Property(depends_on=['sample_freq', 'numsamples'])
+    digest = Property(depends_on=['sample_freq', 'num_samples', 'num_channels'])
 
     def _get_digest(self):
         return digest(self)
 
+    @abstractmethod
     def result(self, num):
         """Python generator that yields the output block-wise.
 
@@ -75,19 +87,19 @@ class Generator(HasPrivateTraits):
 class SamplesGenerator(Generator):
     """Interface for any generating multi-channel time domain signal processing block.
 
-    It provides a common interface for all SamplesGenerator classes, which generate an output via the generator :meth:`result`
-    in block-wise manner. This class has no real functionality on its own and should not be used directly.
+    It provides a common interface for all SamplesGenerator classes, which generate an output via
+    the generator :meth:`result` in block-wise manner. This class has no real functionality on its
+    own and should not be used directly.
+
     """
 
-    #: Number of channels
-    numchannels = CLong
-
     # internal identifier
-    digest = Property(depends_on=['sample_freq', 'numchannels', 'numsamples'])
+    digest = Property(depends_on=['sample_freq', 'num_samples', 'num_channels'])
 
     def _get_digest(self):
         return digest(self)
 
+    @abstractmethod
     def result(self, num):
         """Python generator that yields the output block-wise.
 
@@ -100,35 +112,35 @@ class SamplesGenerator(Generator):
         Yields
         ------
         numpy.ndarray
-            The two-dimensional time-data block of shape (num, numchannels).
+            The two-dimensional time-data block of shape (num, num_channels).
         """
 
 
 class SpectraGenerator(Generator):
     """Interface for any generating multi-channel signal frequency domain processing block.
 
-    It provides a common interface for all SpectraGenerator classes, which generate an output via the generator :meth:`result`
-    in block-wise manner. This class has no real functionality on its own and should not be used directly.
+    It provides a common interface for all SpectraGenerator classes, which generate an output via
+    the generator :meth:`result` in block-wise manner. This class has no real functionality on its
+    own and should not be used directly.
+
     """
 
-    #: Number of channels
-    numchannels = CLong
-
     #: Number of frequencies
-    numfreqs = CLong
+    num_freqs = CInt
 
     #: 1-D array of frequencies
     freqs = CArray
 
     #: The length of the block used to calculate the spectra
-    block_size = CLong
+    block_size = CInt
 
     # internal identifier
-    digest = Property(depends_on=['sample_freq', 'numchannels', 'numsamples', 'numfreqs', 'block_size'])
+    digest = Property(depends_on=['sample_freq', 'num_samples', 'num_channels', 'num_freqs', 'block_size'])
 
     def _get_digest(self):
         return digest(self)
 
+    @abstractmethod
     def result(self, num=1):
         """Python generator that yields the output block-wise.
 
@@ -141,16 +153,18 @@ class SpectraGenerator(Generator):
         Yields
         ------
         numpy.ndarray
-            A two-dimensional block of shape (num, numchannels*numfreqs).
+            A two-dimensional block of shape (num, num_channels * num_freqs).
         """
 
 
+@deprecated_alias({'numchannels': 'num_channels', 'numsamples': 'num_samples'}, read_only=True)
 class TimeOut(SamplesGenerator):
-    """Abstract base class for any signal processing block that receives data from any :attr:`source` domain and returns
-    time domain signals.
+    """Abstract base class for any signal processing block that receives data from any
+    :attr:`source` domain and returns time domain signals.
 
-    It provides a base class that can be used to create signal processing blocks that receive data from any
-    generating :attr:`source` and generates a time signal output via the generator :meth:`result` in block-wise manner.
+    It provides a base class that can be used to create signal processing blocks that receive data
+    from any generating :attr:`source` and generates a time signal output via the generator
+    :meth:`result` in block-wise manner.
     """
 
     #: Data source; :class:`~acoular.base.Generator` or derived object.
@@ -160,10 +174,10 @@ class TimeOut(SamplesGenerator):
     sample_freq = Delegate('source')
 
     #: Number of channels in output, as given by :attr:`source`.
-    numchannels = Delegate('source')
+    num_channels = Delegate('source')
 
     #: Number of samples in output, as given by :attr:`source`.
-    numsamples = Delegate('source')
+    num_samples = Delegate('source')
 
     # internal identifier
     digest = Property(depends_on=['source.digest'])
@@ -172,6 +186,7 @@ class TimeOut(SamplesGenerator):
     def _get_digest(self):
         return digest(self)
 
+    @abstractmethod
     def result(self, num):
         """Python generator that processes the source data and yields the time-signal block-wise.
 
@@ -186,18 +201,18 @@ class TimeOut(SamplesGenerator):
         Yields
         ------
         numpy.ndarray
-            Two-dimensional output data block of shape (num, numchannels)
+            Two-dimensional output data block of shape (num, num_channels)
         """
-        yield from self.source.result(num)
 
 
+@deprecated_alias({'numchannels': 'num_channels', 'numsamples': 'num_samples', 'numfreqs': 'num_freqs'}, read_only=True)
 class SpectraOut(SpectraGenerator):
-    """Abstract base class for any signal processing block that receives data from any :attr:`source` domain and
-    returns frequency domain signals.
+    """Abstract base class for any signal processing block that receives data from any
+    :attr:`source` domain and returns frequency domain signals.
 
-    It provides a base class that can be used to create signal processing blocks that receive data from any
-    generating :attr:`source` domain and generates a frequency domain output via the generator :meth:`result`
-    in block-wise manner.
+    It provides a base class that can be used to create signal processing blocks that receive data
+    from any generating :attr:`source` domain and generates a frequency domain output via the
+    generator :meth:`result` in block-wise manner.
     """
 
     #: Data source; :class:`~acoular.base.Generator` or derived object.
@@ -207,13 +222,13 @@ class SpectraOut(SpectraGenerator):
     sample_freq = Delegate('source')
 
     #: Number of channels in output, as given by :attr:`source`.
-    numchannels = Delegate('source')
+    num_channels = Delegate('source')
 
     #: Number of snapshots in output, as given by :attr:`source`.
-    numsamples = Delegate('source')
+    num_samples = Delegate('source')
 
     #: Number of frequencies in output, as given by :attr:`source`.
-    numfreqs = Delegate('source')
+    num_freqs = Delegate('source')
 
     #: 1-D array of frequencies, as given by :attr:`source`.
     freqs = Delegate('source')
@@ -228,6 +243,7 @@ class SpectraOut(SpectraGenerator):
     def _get_digest(self):
         return digest(self)
 
+    @abstractmethod
     def result(self, num=1):
         """Python generator that processes the source data and yields the output block-wise.
 
@@ -240,17 +256,18 @@ class SpectraOut(SpectraGenerator):
         Yields
         ------
         numpy.ndarray
-            A two-dimensional block of shape (num, numchannels*numfreqs).
+            A two-dimensional block of shape (num, num_channels * num_freqs).
         """
-        yield from self.source.result(num)
 
 
+@deprecated_alias({'numchannels': 'num_channels', 'numsamples': 'num_samples'}, read_only=True)
 class InOut(SamplesGenerator, SpectraGenerator):
-    """Abstract base class for any signal processing block that receives data from any :attr:`source` domain and returns
-    signals in the same domain.
+    """Abstract base class for any signal processing block that receives data from any
+    :attr:`source` domain and returns signals in the same domain.
 
-    It provides a base class that can be used to create signal processing blocks that receive data from any
-    generating :attr:`source` and generates an output via the generator :meth:`result` in block-wise manner.
+    It provides a base class that can be used to create signal processing blocks that receive data
+    from any generating :attr:`source` and generates an output via the generator :meth:`result` in
+    block-wise manner.
     """
 
     #: Data source; :class:`~acoular.base.Generator` or derived object.
@@ -260,10 +277,13 @@ class InOut(SamplesGenerator, SpectraGenerator):
     sample_freq = Delegate('source')
 
     #: Number of channels in output, as given by :attr:`source`.
-    numchannels = Delegate('source')
+    num_channels = Delegate('source')
+
+    #: Number of frequencies in output, as given by :attr:`source`.
+    num_freqs = Delegate('source')
 
     #: Number of samples / snapshots in output, as given by :attr:`source`.
-    numsamples = Delegate('source')
+    num_samples = Delegate('source')
 
     # internal identifier
     digest = Property(depends_on=['source.digest'])
@@ -272,6 +292,7 @@ class InOut(SamplesGenerator, SpectraGenerator):
     def _get_digest(self):
         return digest(self)
 
+    @abstractmethod
     def result(self, num):
         """Python generator that processes the source data and yields the output block-wise.
 
@@ -287,7 +308,6 @@ class InOut(SamplesGenerator, SpectraGenerator):
         numpy.ndarray
             Two-dimensional output data block of shape (num, ...)
         """
-        yield from self.source.result(num)
 
 
 class TimeInOut(TimeOut):

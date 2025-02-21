@@ -6,8 +6,9 @@
 Cross-spectral matrix import
 ============================
 
-This example demonstrates how to import a cross-spectral matrix from a external source
-by means of the :class:`acoular.spectra.PowerSpectraImport` class. The CSM is created numerically for a frequency of 8 kHz.
+This example demonstrates how to import a cross-spectral matrix from a external source by means of
+the :class:`acoular.spectra.PowerSpectraImport` class. The CSM is created numerically for a
+frequency of 8 kHz.
 """
 
 from pathlib import Path
@@ -17,17 +18,17 @@ import numpy as np
 
 # %%
 # Define the source positions and rms values of three sources as well as the microphone positions
-loc1 = (-0.1, -0.1, 0.3)
-loc2 = (0.15, 0, 0.3)
-loc3 = (0, 0.1, 0.3)
+loc1 = (-0.1, -0.1, -0.3)
+loc2 = (0.15, 0, -0.3)
+loc3 = (0, 0.1, -0.3)
 rms = np.array([1, 0.7, 0.5])
 
 micgeofile = Path(ac.__file__).parent / 'xml' / 'array_64.xml'
-mg = ac.MicGeom(from_file=micgeofile)
+mg = ac.MicGeom(file=micgeofile)
 
 # %%
 # Obtain the transfer function of the monopole sources by using the SteeringVector object
-st_src = ac.SteeringVector(grid=ac.ImportGrid(gpos_file=np.array([loc1, loc2, loc3]).T), mics=mg)
+st_src = ac.SteeringVector(grid=ac.ImportGrid(pos=np.array([loc1, loc2, loc3]).T), mics=mg)
 H = st_src.transfer(8000).T  # transfer functions for 8000 Hz
 H_h = H.transpose().conjugate()  # H hermetian
 
@@ -45,7 +46,7 @@ ps_import = ac.PowerSpectraImport(csm=csm.copy(), frequencies=8000)
 # %%
 # Calculate the Beamforming result for the imported cross-spectral matrix
 
-rg = ac.RectGrid(x_min=-0.2, x_max=0.2, y_min=-0.2, y_max=0.2, z=0.3, increment=0.01)
+rg = ac.RectGrid(x_min=-0.2, x_max=0.2, y_min=-0.2, y_max=0.2, z=-0.3, increment=0.01)
 st = ac.SteeringVector(grid=rg, mics=mg)
 bb = ac.BeamformerBase(freq_data=ps_import, steer=st, r_diag=False, cached=False)
 pm = bb.synthetic(8000, 0)
@@ -53,9 +54,9 @@ Lm = ac.L_p(pm)
 
 # %%
 # Show the source map
-from pylab import colorbar, figure, imshow, show
+import matplotlib.pyplot as plt
 
-figure()
-imshow(Lm.T, origin='lower', vmin=Lm.max() - 10, extent=rg.extend(), interpolation='bicubic')
-colorbar()
-show()
+plt.figure()
+plt.imshow(Lm.T, origin='lower', vmin=Lm.max() - 10, extent=rg.extend(), interpolation='bicubic')
+plt.colorbar()
+plt.show()

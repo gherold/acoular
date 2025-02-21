@@ -32,6 +32,7 @@
 
 # imports from other packages
 import wave
+from abc import abstractmethod
 from datetime import datetime, timezone
 from os import path
 from warnings import warn
@@ -70,7 +71,7 @@ from numpy import (
     split,
     sqrt,
     stack,
-    sum,
+    sum,  # noqa: A004
     tile,
     unique,
     zeros,
@@ -83,19 +84,20 @@ from scipy.spatial import Delaunay
 from traits.api import (
     Bool,
     CArray,
-    CLong,
+    CInt,
     Constant,
     Delegate,
     Dict,
+    Enum,
     File,
     Float,
     Instance,
     Int,
     List,
-    ListInt,
+    Map,
     Property,
     Str,
-    Trait,
+    Union,
     cached_property,
     observe,
     on_trait_change,
@@ -104,12 +106,15 @@ from traits.api import (
 # acoular imports
 from .base import SamplesGenerator, TimeOut
 from .configuration import config
+from .deprecation import deprecated_alias
 from .environments import cartToCyl, cylToCart
 from .h5files import _get_h5file_class
 from .internal import digest, ldigest
 from .microphones import MicGeom
+from .tools.utils import find_basename
 
 
+@deprecated_alias({'numchannels_total': 'num_channels_total', 'numsamples_total': 'num_samples_total'})
 class MaskedTimeOut(TimeOut):
     """Signal processing block for channel and sample selection.
 
@@ -120,35 +125,39 @@ class MaskedTimeOut(TimeOut):
     and generates output via the generator :meth:`result`.
     """
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
-    #: Index of the first sample to be considered valid.
-    start = CLong(0, desc='start of valid samples')
+    # Index of the first sample to be considered valid.
+    start = CInt(0, desc='start of valid samples')
 
-    #: Index of the last sample to be considered valid.
-    stop = Trait(None, None, CLong, desc='stop of valid samples')
+    # Index of the last sample to be considered valid.
+    stop = Union(None, CInt, desc='stop of valid samples')
 
-    #: Channels that are to be treated as invalid.
-    invalid_channels = ListInt(desc='list of invalid channels')
+    # Channels that are to be treated as invalid.
+    invalid_channels = List(int, desc='list of invalid channels')
 
-    #: Channel mask to serve as an index for all valid channels, is set automatically.
-    channels = Property(depends_on=['invalid_channels', 'source.numchannels'], desc='channel mask')
+    # Channel mask to serve as an index for all valid channels, is set automatically.
+    channels = Property(depends_on=['invalid_channels', 'source.num_channels'], desc='channel mask')
 
-    #: Number of channels in input, as given by :attr:`~acoular.base.TimeOut.source`.
-    numchannels_total = Delegate('source', 'numchannels')
+    # Number of channels in input, as given by :attr:`~acoular.base.TimeOut.source`.
+    num_channels_total = Delegate('source', 'num_channels')
 
-    #: Number of samples in input, as given by :attr:`~acoular.base.TimeOut.source`.
-    numsamples_total = Delegate('source', 'numsamples')
+    # Number of samples in input, as given by :attr:`~acoular.base.TimeOut.source`.
+    num_samples_total = Delegate('source', 'num_samples')
 
-    #: Number of valid channels, is set automatically.
-    numchannels = Property(depends_on=['invalid_channels', 'source.numchannels'], desc='number of valid input channels')
+    # Number of valid channels, is set automatically.
+    num_channels = Property(
+        depends_on=['invalid_channels', 'source.num_channels'], desc='number of valid input channels'
+    )
 
-    #: Number of valid time samples, is set automatically.
-    numsamples = Property(depends_on=['start', 'stop', 'source.numsamples'], desc='number of valid samples per channel')
+    # Number of valid time samples, is set automatically.
+    num_samples = Property(
+        depends_on=['start', 'stop', 'source.num_samples'], desc='number of valid samples per channel'
+    )
 
-    #: Name of the cache file without extension, readonly.
-    basename = Property(depends_on='source.digest', desc='basename for cache file')
+    # Name of the cache file without extension, readonly.
+    basename = Property(depends_on=['source.digest'], desc='basename for cache file')
 
     # internal identifier
     digest = Property(depends_on=['source.digest', 'start', 'stop', 'invalid_channels'])
@@ -159,26 +168,32 @@ class MaskedTimeOut(TimeOut):
 
     @cached_property
     def _get_basename(self):
-        if 'basename' in self.source.all_trait_names():
-            return self.source.basename
-        return self.source.__class__.__name__ + self.source.digest
+        warn(
+            (
+                f'The basename attribute of a {self.__class__.__name__} object is deprecated'
+                ' and will be removed in a future release!'
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return find_basename(self.source, alternative_basename=self.source.__class__.__name__ + self.source.digest)
 
     @cached_property
     def _get_channels(self):
         if len(self.invalid_channels) == 0:
             return slice(0, None, None)
-        allr = [i for i in range(self.numchannels_total) if i not in self.invalid_channels]
+        allr = [i for i in range(self.num_channels_total) if i not in self.invalid_channels]
         return array(allr)
 
     @cached_property
-    def _get_numchannels(self):
+    def _get_num_channels(self):
         if len(self.invalid_channels) == 0:
-            return self.numchannels_total
+            return self.num_channels_total
         return len(self.channels)
 
     @cached_property
-    def _get_numsamples(self):
-        sli = slice(self.start, self.stop).indices(self.numsamples_total)
+    def _get_num_samples(self):
+        sli = slice(self.start, self.stop).indices(self.num_samples_total)
         return sli[1] - sli[0]
 
     def result(self, num):
@@ -192,22 +207,22 @@ class MaskedTimeOut(TimeOut):
 
         Returns
         -------
-        Samples in blocks of shape (num, :attr:`numchannels`).
+        Samples in blocks of shape (num, :attr:`num_channels`).
             The last block may be shorter than num.
 
         """
-        sli = slice(self.start, self.stop).indices(self.numsamples_total)
+        sli = slice(self.start, self.stop).indices(self.num_samples_total)
         start = sli[0]
         stop = sli[1]
         if start >= stop:
             msg = 'no samples available'
             raise OSError(msg)
 
-        if start != 0 or stop != self.numsamples_total:
+        if start != 0 or stop != self.num_samples_total:
             offset = -start % num
             if offset == 0:
                 offset = num
-            buf = empty((num + offset, self.numchannels), dtype=float)
+            buf = empty((num + offset, self.num_channels), dtype=float)
             bsize = 0
             i = 0
             fblock = True
@@ -248,14 +263,14 @@ class ChannelMixer(TimeOut):
     Outputs a single channel.
     """
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
-    #: Amplitude weight(s) for the channels as array. If not set, all channels are equally weighted.
+    # Amplitude weight(s) for the channels as array. If not set, all channels are equally weighted.
     weights = CArray(desc='channel weights')
 
     # Number of channels is always one here.
-    numchannels = Constant(1)
+    num_channels = Constant(1)
 
     # internal identifier
     digest = Property(depends_on=['source.digest', 'weights'])
@@ -280,10 +295,10 @@ class ChannelMixer(TimeOut):
 
         """
         if self.weights.size:
-            if self.weights.shape in {(self.source.numchannels,), (1,)}:
+            if self.weights.shape in {(self.source.num_channels,), (1,)}:
                 weights = self.weights
             else:
-                msg = f'Weight factors can not be broadcasted: {self.weights.shape}, {(self.source.numchannels,)}'
+                msg = f'Weight factors can not be broadcasted: {self.weights.shape}, {(self.source.num_channels,)}'
                 raise ValueError(msg)
         else:
             weights = 1
@@ -306,59 +321,56 @@ class TriggerLegacy(TimeOut):
     vary too much.
     """
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
-    #: Threshold of trigger. Has different meanings for different
-    #: :attr:`~acoular.tprocess.Trigger.trigger_type`. The sign is relevant.
-    #: If a sample of the signal is above/below the positive/negative threshold,
-    #: it is assumed to be a peak.
-    #: Default is None, in which case a first estimate is used: The threshold
-    #: is assumed to be 75% of the max/min difference between all extremums and the
-    #: mean value of the trigger signal. E.g: the mean value is 0 and there are positive
-    #: extremums at 400 and negative extremums at -800. Then the estimated threshold would be
-    #: 0.75 * -800 = -600.
+    # Threshold of trigger. Has different meanings for different
+    # :attr:`~acoular.tprocess.Trigger.trigger_type`. The sign is relevant.
+    # If a sample of the signal is above/below the positive/negative threshold,
+    # it is assumed to be a peak.
+    # Default is None, in which case a first estimate is used: The threshold
+    # is assumed to be 75% of the max/min difference between all extremums and the
+    # mean value of the trigger signal. E.g: the mean value is 0 and there are positive
+    # extremums at 400 and negative extremums at -800. Then the estimated threshold would be
+    # 0.75 * -800 = -600.
     threshold = Float(None)
 
-    #: Maximum allowable variation of length of each revolution duration. Default is
-    #: 2%. A warning is thrown, if any revolution length surpasses this value:
-    #: abs(durationEachRev - meanDuration) > 0.02 * meanDuration
+    # Maximum allowable variation of length of each revolution duration. Default is
+    # 2%. A warning is thrown, if any revolution length surpasses this value:
+    # abs(durationEachRev - meanDuration) > 0.02 * meanDuration
     max_variation_of_duration = Float(0.02)
 
-    #: Defines the length of hunks via lenHunk = hunk_length * maxOncePerRevDuration.
-    #: If there are multiple peaks within lenHunk, then the algorithm will
-    #: cancel all but one out (see :attr:`~acoular.tprocess.Trigger.multiple_peaks_in_hunk`).
-    #: Default is to 0.1.
+    # Defines the length of hunks via lenHunk = hunk_length * maxOncePerRevDuration.
+    # If there are multiple peaks within lenHunk, then the algorithm will
+    # cancel all but one out (see :attr:`~acoular.tprocess.Trigger.multiple_peaks_in_hunk`).
+    # Default is to 0.1.
     hunk_length = Float(0.1)
 
-    #: Type of trigger.
-    #:
-    #: 'dirac': a single puls is assumed (sign of
-    #: :attr:`~acoular.tprocess.Trigger.trigger_type` is important).
-    #: Sample will trigger if its value is above/below the pos/neg threshold.
-    #:
-    #: 'rect' : repeating rectangular functions. Only every second
-    #: edge is assumed to be a trigger. The sign of
-    #: :attr:`~acoular.tprocess.Trigger.trigger_type` gives information
-    #: on which edge should be used (+ for rising edge, - for falling edge).
-    #: Sample will trigger if the difference between its value and its predecessors value
-    #: is above/below the pos/neg threshold.
-    #:
-    #: Default is 'dirac'.
-    trigger_type = Trait('dirac', 'rect')
+    # Type of trigger.
+    #
+    # 'dirac': a single pulse is assumed (sign of :attr:`~acoular.tprocess.Trigger.trigger_type` is
+    # important). Sample will trigger if its value is above/below the pos/neg threshold.
+    #
+    # 'rect' : repeating rectangular functions. Only every second edge is assumed to be a trigger.
+    # The sign of :attr:`~acoular.tprocess.Trigger.trigger_type` gives information on which edge
+    # should be used (+ for rising edge, - for falling edge). Sample will trigger if the difference
+    # between its value and its predecessors value is above/below the pos/neg threshold.
+    #
+    # Default is 'dirac'.
+    trigger_type = Enum('dirac', 'rect')
 
-    #: Identifier which peak to consider, if there are multiple peaks in one hunk
-    #: (see :attr:`~acoular.tprocess.Trigger.hunk_length`). Default is to 'extremum',
-    #: in which case the extremal peak (maximum if threshold > 0, minimum if threshold < 0) is considered.
-    multiple_peaks_in_hunk = Trait('extremum', 'first')
+    # Identifier which peak to consider, if there are multiple peaks in one hunk : (see
+    # :attr:`~acoular.tprocess.Trigger.hunk_length`). Default is to 'extremum', : in which case the
+    # extremal peak (maximum if threshold > 0, minimum if threshold < 0) is considered.
+    multiple_peaks_in_hunk = Enum('extremum', 'first')
 
-    #: Tuple consisting of 3 entries:
-    #:
-    #: 1.: -Vector with the sample indices of the 1/Rev trigger samples
-    #:
-    #: 2.: -maximum of number of samples between adjacent trigger samples
-    #:
-    #: 3.: -minimum of number of samples between adjacent trigger samples
+    # Tuple consisting of 3 entries:
+    #
+    # 1.: -Vector with the sample indices of the 1/Rev trigger samples
+    #
+    # 2.: -maximum of number of samples between adjacent trigger samples
+    #
+    # 3.: -minimum of number of samples between adjacent trigger samples
     trigger_data = Property(
         depends_on=[
             'source.digest',
@@ -436,8 +448,8 @@ class TriggerLegacy(TimeOut):
         faultyInd = flatnonzero(diffDist > self.max_variation_of_duration * meanDist)
         if faultyInd.size != 0:
             warn(
-                'In Trigger-Identification: The distances between the peaks (and therefor the lengths of the revolutions) vary too much (check samples %s).'
-                % str(peakLoc[faultyInd] + self.source.start),
+                f'In Trigger-Identification: The distances between the peaks (and therefore the lengths of the \
+                revolutions) vary too much (check samples {peakLoc[faultyInd] + self.source.start}).',
                 Warning,
                 stacklevel=2,
             )
@@ -450,7 +462,8 @@ class TriggerLegacy(TimeOut):
     def _trigger_rect(self, x0, x, threshold):
         # x0 stores the last value of the the last generator cycle
         xNew = append(x0, x)
-        # indPeakHunk = abs(xNew[1:] - xNew[:-1]) > abs(threshold)  # with this line: every edge would be located
+        # indPeakHunk = abs(xNew[1:] - xNew[:-1]) > abs(threshold)
+        # with above line, every edge would be located
         return self._trigger_value_comp(xNew[1:] - xNew[:-1], threshold)
 
     def _trigger_value_comp(self, trigger_data, threshold):
@@ -474,24 +487,30 @@ class TriggerLegacy(TimeOut):
             maxTriggerHelp = [minVal, maxVal] - meanVal
             argInd = argmax(abs(maxTriggerHelp))
             thresh = maxTriggerHelp[argInd] * 0.75  # 0.75 for 75% of max trigger signal
-            warn('No threshold was passed. An estimated threshold of %s is assumed.' % thresh, Warning, stacklevel=2)
+            warn(f'No threshold was passed. An estimated threshold of {thresh} is assumed.', Warning, stacklevel=2)
         else:  # take user defined  threshold
             thresh = self.threshold
         return thresh
 
     def _check_trigger_existence(self):
-        nChannels = self.source.numchannels
-        if not nChannels == 1:
-            raise Exception('Trigger signal must consist of ONE channel, instead %s channels are given!' % nChannels)
+        nChannels = self.source.num_channels
+        if nChannels != 1:
+            msg = f'Trigger signal must consist of ONE channel, instead {nChannels} channels are given!'
+            raise Exception(msg)
         return 0
+
+    def result(self, num):
+        msg = 'result method not implemented yet! Data from source will be passed without transformation.'
+        warn(msg, Warning, stacklevel=2)
+        yield from self.source.result(num)
 
 
 class AngleTracker(MaskedTimeOut):
     """Calculates rotation angle and rpm per sample from a trigger signal
     using spline interpolation in the time domain.
 
-    Gets samples from :attr:`trigger` and stores the angle and rpm samples in :meth:`angle` and :meth:`rpm`.
-
+    Gets samples from :attr:`trigger` and stores the angle and rpm samples in :meth:`angle` and
+    :meth:`rpm`.
     """
 
     #: Trigger data from :class:`acoular.tprocess.TriggerLegacy`.
@@ -509,29 +528,29 @@ class AngleTracker(MaskedTimeOut):
         ],
     )
 
-    #: Trigger signals per revolution,
-    #: defaults to 1.
+    # Trigger signals per revolution,
+    # defaults to 1.
     trigger_per_revo = Int(1, desc='trigger signals per revolution')
 
-    #: Flag to set counter-clockwise (1) or clockwise (-1) rotation,
-    #: defaults to -1.
+    # Flag to set counter-clockwise (1) or clockwise (-1) rotation,
+    # defaults to -1.
     rot_direction = Int(-1, desc='mathematical direction of rotation')
 
-    #: Points of interpolation used for spline,
-    #: defaults to 4.
+    # Points of interpolation used for spline,
+    # defaults to 4.
     interp_points = Int(4, desc='Points of interpolation used for spline')
 
-    #: rotation angle in radians for first trigger position
+    # rotation angle in radians for first trigger position
     start_angle = Float(0, desc='rotation angle for trigger position')
 
-    #: revolutions per minute for each sample, read-only
-    rpm = Property(depends_on='digest', desc='revolutions per minute for each sample')
+    # revolutions per minute for each sample, read-only
+    rpm = Property(depends_on=['digest'], desc='revolutions per minute for each sample')
 
-    #: average revolutions per minute, read-only
-    average_rpm = Property(depends_on='digest', desc='average revolutions per minute')
+    # average revolutions per minute, read-only
+    average_rpm = Property(depends_on=['digest'], desc='average revolutions per minute')
 
-    #: rotation angle in radians for each sample, read-only
-    angle = Property(depends_on='digest', desc='rotation angle for each sample')
+    # rotation angle in radians for each sample, read-only
+    angle = Property(depends_on=['digest'], desc='rotation angle for each sample')
 
     # Internal flag to determine whether rpm and angle calculation has been processed,
     # prevents recalculation
@@ -565,14 +584,14 @@ class AngleTracker(MaskedTimeOut):
         peakloc, maxdist, mindist = self.trigger.trigger_data
         TriggerPerRevo = self.trigger_per_revo
         rotDirection = self.rot_direction
-        num = self.source.numsamples
+        num = self.source.num_samples
         samplerate = self.source.sample_freq
         self._rpm = zeros(num)
         self._angle = zeros(num)
         # number of spline points
         InterpPoints = self.interp_points
 
-        # loop over alle timesamples
+        # loop over all timesamples
         while ind < num:
             # when starting spline forward
             if ind < peakloc[InterpPoints]:
@@ -636,24 +655,24 @@ class AngleTracker(MaskedTimeOut):
 
         """
         # trigger indices data
-        peakloc = self.trigger.trigger_data()[0]
+        peakloc = self.trigger.trigger_data[0]
         # calculation of average rpm in 1/min
         return (len(peakloc) - 1) / (peakloc[-1] - peakloc[0]) / self.trigger_per_revo * self.source.sample_freq * 60
 
 
-class SpatialInterpolator(TimeOut):
+class SpatialInterpolator(TimeOut):  # pragma: no cover
     """Base class for spatial interpolation of microphone data.
     Gets samples from :attr:`source` and generates output via the
     generator :meth:`result`.
     """
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
-    #: :class:`~acoular.microphones.MicGeom` object that provides the real microphone locations.
+    # :class:`~acoular.microphones.MicGeom` object that provides the real microphone locations.
     mics = Instance(MicGeom(), desc='microphone geometry')
 
-    #: :class:`~acoular.microphones.MicGeom` object that provides the virtual microphone locations.
+    # :class:`~acoular.microphones.MicGeom` object that provides the virtual microphone locations.
     mics_virtual = Property(desc='microphone geometry')
 
     _mics_virtual = Instance(MicGeom, desc='internal microphone geometry;internal usage, read only')
@@ -666,12 +685,12 @@ class SpatialInterpolator(TimeOut):
     def _set_mics_virtual(self, mics_virtual):
         self._mics_virtual = mics_virtual
 
-    #: Interpolation method in spacial domain, defaults to linear
-    #: linear uses numpy linear interpolation
-    #: spline uses scipy CloughTocher algorithm
-    #: rbf is scipy radial basis function with multiquadric, cubic and sinc functions
-    #: idw refers to the inverse distance weighting algorithm
-    method = Trait(
+    # Interpolation method in spatial domain, defaults to linear
+    # linear uses numpy linear interpolation
+    # spline uses scipy CloughTocher algorithm
+    # rbf is scipy radial basis function with multiquadric, cubic and sinc functions
+    # idw refers to the inverse distance weighting algorithm
+    method = Enum(
         'linear',
         'spline',
         'rbf-multiquadric',
@@ -682,42 +701,41 @@ class SpatialInterpolator(TimeOut):
         desc='method for interpolation used',
     )
 
-    #: spacial dimensionality of the array geometry
-    array_dimension = Trait('1D', '2D', 'ring', '3D', 'custom', desc='spacial dimensionality of the array geometry')
+    # spatial dimensionality of the array geometry
+    array_dimension = Enum('1D', '2D', 'ring', '3D', 'custom', desc='spatial dimensionality of the array geometry')
 
-    #: Sampling frequency of output signal, as given by :attr:`source`.
+    # Sampling frequency of output signal, as given by :attr:`source`.
     sample_freq = Delegate('source', 'sample_freq')
 
-    #: Number of channels in output.
-    numchannels = Property()
+    # Number of channels in output.
+    num_channels = Property()
 
-    #: Number of samples in output, as given by :attr:`source`.
-    numsamples = Delegate('source', 'numsamples')
+    # Number of samples in output, as given by :attr:`source`.
+    num_samples = Delegate('source', 'num_samples')
 
-    #:Interpolate a point at the origin of the Array geometry
+    # Interpolate a point at the origin of the Array geometry
     interp_at_zero = Bool(False)
 
-    #: The rotation must be around the z-axis, which means from x to y axis.
-    #: If the coordinates are not build like that, than this 3x3 orthogonal
-    #: transformation matrix Q can be used to modify the coordinates.
-    #: It is assumed that with the modified coordinates the rotation is around the z-axis.
-    #: The transformation is done via [x,y,z]_mod = Q * [x,y,z]. (default is Identity).
+    # The rotation must be around the z-axis, which means from x to y axis.
+    # If the coordinates are not build like that, than this 3x3 orthogonal
+    # transformation matrix Q can be used to modify the coordinates.
+    # It is assumed that with the modified coordinates the rotation is around the z-axis.
+    # The transformation is done via [x,y,z]_mod = Q * [x,y,z]. (default is Identity).
     Q = CArray(dtype=float64, shape=(3, 3), value=identity(3))
 
-    num_IDW = Trait(3, dtype=int, desc='number of neighboring microphones, DEFAULT=3')  # noqa: N815
+    num_IDW = Int(3, desc='number of neighboring microphones, DEFAULT=3')  # noqa: N815
 
-    p_weight = Trait(
+    p_weight = Float(
         2,
-        dtype=float,
         desc='used in interpolation for virtual microphone, weighting power exponent for IDW',
     )
 
-    #: Stores the output of :meth:`_virtNewCoord_func`; Read-Only
+    # Stores the output of :meth:`_virtNewCoord_func`; Read-Only
     _virtNewCoord_func = Property(  # noqa: N815
         depends_on=['mics.digest', 'mics_virtual.digest', 'method', 'array_dimension', 'interp_at_zero'],
     )
 
-    #: internal identifier
+    # internal identifier
     digest = Property(
         depends_on=[
             'mics.digest',
@@ -730,7 +748,7 @@ class SpatialInterpolator(TimeOut):
         ],
     )
 
-    def _get_numchannels(self):
+    def _get_num_channels(self):
         return self.mics_virtual.num_mics
 
     @cached_property
@@ -762,26 +780,30 @@ class SpatialInterpolator(TimeOut):
         Returns
         -------
         mesh : List[]
-            The items of these lists are dependent of the reduced interpolation dimension of each subarray.
+            The items of these lists depend on the reduced interpolation dimension of each subarray.
             If the Array is 1D the list items are:
                 1. item : float64[nMicsInSpecificSubarray]
-                    Ordered positions of the real mics on the new 1d axis, to be used as inputs for numpys interp.
+                    Ordered positions of the real mics on the new 1d axis,
+                    to be used as inputs for numpys interp.
                 2. item : int64[nMicsInArray]
-                    Indices identifying how the measured pressures must be evaluated, s.t. the entries of the previous item (see last line)
-                    correspond to their initial pressure values
+                    Indices identifying how the measured pressures must be evaluated, s.t. the
+                    entries of the previous item (see last line) correspond to their initial
+                    pressure values.
             If the Array is 2D or 3d the list items are:
                 1. item : Delaunay mesh object
-                    Delauney mesh (see scipy.spatial.Delaunay) for the specific Array
+                    Delaunay mesh (see scipy.spatial.Delaunay) for the specific Array
                 2. item : int64[nMicsInArray]
-                    same as 1d case, BUT with the difference, that here the rotational periodicy is handled, when constructing the mesh.
-                    Therefor the mesh could have more vertices than the actual Array mics.
+                    same as 1d case, BUT with the difference, that here the rotational periodicity
+                    is handled, when constructing the mesh. Therefore, the mesh could have more
+                    vertices than the actual Array mics.
 
         virtNewCoord : float64[3, nVirtualMics]
-            Projection of each virtual mic onto its new coordinates. The columns of virtNewCoord correspond to [phi, rho, z]
+            Projection of each virtual mic onto its new coordinates. The columns of virtNewCoord
+            correspond to [phi, rho, z].
 
         newCoord : float64[3, nMics]
-            Projection of each mic onto its new coordinates. The columns of newCoordinates correspond to [phi, rho, z]
-
+            Projection of each mic onto its new coordinates. The columns of newCoordinates
+            correspond to [phi, rho, z].
         """
         # init positions of virtual mics in cyl coordinates
         nVirtMics = mpos_virt.shape[1]
@@ -942,7 +964,7 @@ class SpatialInterpolator(TimeOut):
             # if no rotation given
             else:
                 xInterp = tile(virtNewCoord[0, :], (nTime, 1))
-            # get ordered microphone posions in radiant
+            # get ordered microphone positions in radiant
             x = newCoord[0]
             for cntTime in range(nTime):
                 if self.method == 'linear':
@@ -1054,7 +1076,7 @@ class SpatialInterpolator(TimeOut):
                 # using inverse distance weighting
                 elif self.method == 'IDW':
                     newPoint2_M = newPoint.T
-                    newPoint3_M = append(newPoint2_M, zeros([1, self.numchannels]), axis=0)
+                    newPoint3_M = append(newPoint2_M, zeros([1, self.num_channels]), axis=0)
                     newPointCart = cylToCart(newPoint3_M)
                     for ind in arange(len(newPoint[:, 0])):
                         newPoint_Rep = tile(newPointCart[:, ind], (len(newPoint[:, 0]), 1)).T
@@ -1127,17 +1149,22 @@ class SpatialInterpolator(TimeOut):
         # return interpolated pressure values
         return pInterp
 
+    def result(self, num):
+        msg = 'result method not implemented yet! Data from source will be passed without transformation.'
+        warn(msg, Warning, stacklevel=2)
+        yield from self.source.result(num)
 
-class SpatialInterpolatorRotation(SpatialInterpolator):
+
+class SpatialInterpolatorRotation(SpatialInterpolator):  # pragma: no cover
     """Spatial  Interpolation for rotating sources. Gets samples from :attr:`source`
     and angles from  :attr:`AngleTracker`.Generates output via the generator :meth:`result`.
 
     """
 
-    #: Angle data from AngleTracker class
+    # Angle data from AngleTracker class
     angle_source = Instance(AngleTracker)
 
-    #: Internal identifier
+    # Internal identifier
     digest = Property(
         depends_on=[
             'source.digest',
@@ -1166,7 +1193,7 @@ class SpatialInterpolatorRotation(SpatialInterpolator):
 
         Returns
         -------
-        Samples in blocks of shape (num, :attr:`numchannels`).
+        Samples in blocks of shape (num, :attr:`num_channels`).
             The last block may be shorter than num.
 
         """
@@ -1183,14 +1210,14 @@ class SpatialInterpolatorRotation(SpatialInterpolator):
             count += num
 
 
-class SpatialInterpolatorConstantRotation(SpatialInterpolator):
+class SpatialInterpolatorConstantRotation(SpatialInterpolator):  # pragma: no cover
     """Spatial linear Interpolation for constantly rotating sources.
     Gets samples from :attr:`source` and generates output via the
     generator :meth:`result`.
     """
 
-    #: Rotational speed in rps. Positive, if rotation is around positive z-axis sense,
-    #: which means from x to y axis.
+    # Rotational speed in rps. Positive, if rotation is around positive z-axis sense,
+    # which means from x to y axis.
     rotational_speed = Float(0.0)
 
     # internal identifier
@@ -1222,7 +1249,7 @@ class SpatialInterpolatorConstantRotation(SpatialInterpolator):
 
         Returns
         -------
-        Samples in blocks of shape (num, :attr:`numchannels`).
+        Samples in blocks of shape (num, :attr:`num_channels`).
             The last block may be shorter than num.
 
         """
@@ -1240,21 +1267,21 @@ class SpatialInterpolatorConstantRotation(SpatialInterpolator):
 class Mixer(TimeOut):
     """Mixes the signals from several sources."""
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` object.
-    source = Trait(SamplesGenerator)
+    # Data source; :class:`~acoular.base.SamplesGenerator` object.
+    source = Instance(SamplesGenerator)
 
-    #: List of additional :class:`~acoular.base.SamplesGenerator` objects
-    #: to be mixed.
+    # List of additional :class:`~acoular.base.SamplesGenerator` objects
+    # to be mixed.
     sources = List(Instance(SamplesGenerator, ()))
 
-    #: Sampling frequency of the signal as given by :attr:`source`.
+    # Sampling frequency of the signal as given by :attr:`source`.
     sample_freq = Delegate('source')
 
-    #: Number of channels in output as given by :attr:`source`.
-    numchannels = Delegate('source')
+    # Number of channels in output as given by :attr:`source`.
+    num_channels = Delegate('source')
 
-    #: Number of samples in output as given by :attr:`source`.
-    numsamples = Delegate('source')
+    # Number of samples in output as given by :attr:`source`.
+    num_samples = Delegate('source')
 
     # internal identifier
     sdigest = Str()
@@ -1275,9 +1302,11 @@ class Mixer(TimeOut):
         if self.source:
             for s in self.sources:
                 if self.sample_freq != s.sample_freq:
-                    raise ValueError('Sample frequency of %s does not fit' % s)
-                if self.numchannels != s.numchannels:
-                    raise ValueError('Channel count of %s does not fit' % s)
+                    msg = f'Sample frequency of {s} does not fit'
+                    raise ValueError(msg)
+                if self.num_channels != s.num_channels:
+                    msg = f'Channel count of {s} does not fit'
+                    raise ValueError(msg)
 
     def result(self, num):
         """Python generator that yields the output block-wise.
@@ -1292,7 +1321,7 @@ class Mixer(TimeOut):
 
         Returns
         -------
-        Samples in blocks of shape (num, numchannels).
+        Samples in blocks of shape (num, num_channels).
             The last block may be shorter than num.
 
         """
@@ -1318,7 +1347,7 @@ class Mixer(TimeOut):
 class TimePower(TimeOut):
     """Calculates time-depended power of the signal."""
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
     def result(self, num):
@@ -1333,7 +1362,7 @@ class TimePower(TimeOut):
         Returns
         -------
         Squared output of source.
-            Yields samples in blocks of shape (num, numchannels).
+            Yields samples in blocks of shape (num, num_channels).
             The last block may be shorter than num.
 
         """
@@ -1344,7 +1373,7 @@ class TimePower(TimeOut):
 class TimeCumAverage(TimeOut):
     """Calculates cumulative average of the signal, useful for Leq."""
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
     def result(self, num):
@@ -1359,7 +1388,7 @@ class TimeCumAverage(TimeOut):
         Returns
         -------
         Cumulative average of the output of source.
-            Yields samples in blocks of shape (num, numchannels).
+            Yields samples in blocks of shape (num, num_channels).
             The last block may be shorter than num.
 
         """
@@ -1377,7 +1406,7 @@ class TimeCumAverage(TimeOut):
 class TimeReverse(TimeOut):
     """Calculates the time-reversed signal of a source."""
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
     def result(self, num):
@@ -1391,7 +1420,7 @@ class TimeReverse(TimeOut):
 
         Returns
         -------
-        Yields samples in blocks of shape (num, numchannels).
+        Yields samples in blocks of shape (num, num_channels).
             Time-reversed output of source.
             The last block may be shorter than num.
 
@@ -1414,13 +1443,13 @@ class Filter(TimeOut):
     implements a filter with coefficients that may be changed
     during processing.
 
-    Should not be instanciated by itself
+    Should not be instantiated by itself.
     """
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
-    #: Filter coefficients
+    # Filter coefficients
     sos = Property()
 
     def _get_sos(self):
@@ -1437,13 +1466,13 @@ class Filter(TimeOut):
 
         Returns
         -------
-        Samples in blocks of shape (num, numchannels).
+        Samples in blocks of shape (num, num_channels).
             Delivers the bandpass filtered output of source.
             The last block may be shorter than num.
 
         """
         sos = self.sos
-        zi = zeros((sos.shape[0], 2, self.source.numchannels))
+        zi = zeros((sos.shape[0], 2, self.source.num_channels))
         for block in self.source.result(num):
             sos = self.sos  # this line is useful in case of changes
             # to self.sos during generator lifetime
@@ -1454,19 +1483,19 @@ class Filter(TimeOut):
 class FiltOctave(Filter):
     """Octave or third-octave filter (causal, non-zero phase delay)."""
 
-    #: Band center frequency; defaults to 1000.
+    # Band center frequency; defaults to 1000.
     band = Float(1000.0, desc='band center frequency')
 
-    #: Octave fraction: 'Octave' or 'Third octave'; defaults to 'Octave'.
-    fraction = Trait('Octave', {'Octave': 1, 'Third octave': 3}, desc='fraction of octave')
+    # Octave fraction: 'Octave' or 'Third octave'; defaults to 'Octave'.
+    fraction = Map({'Octave': 1, 'Third octave': 3}, default_value='Octave', desc='fraction of octave')
 
-    #: Filter order
+    # Filter order
     order = Int(3, desc='IIR filter order')
 
     sos = Property(depends_on=['band', 'fraction', 'source.digest', 'order'])
 
     # internal identifier
-    digest = Property(depends_on=['source.digest', '__class__', 'band', 'fraction', 'order'])
+    digest = Property(depends_on=['source.digest', 'band', 'fraction', 'order'])
 
     @cached_property
     def _get_digest(self):
@@ -1499,11 +1528,11 @@ class FiltFiltOctave(FiltOctave):
     It requires large amounts of memory!
     """
 
-    #: Filter order (applied for forward filter and backward filter)
+    # Filter order (applied for forward filter and backward filter)
     order = Int(2, desc='IIR filter half order')
 
     # internal identifier
-    digest = Property(depends_on=['source.digest', '__class__', 'band', 'fraction', 'order'])
+    digest = Property(depends_on=['source.digest', 'band', 'fraction', 'order'])
 
     @cached_property
     def _get_digest(self):
@@ -1541,20 +1570,20 @@ class FiltFiltOctave(FiltOctave):
 
         Returns
         -------
-        Samples in blocks of shape (num, numchannels).
+        Samples in blocks of shape (num, num_channels).
             Delivers the zero-phase bandpass filtered output of source.
             The last block may be shorter than num.
 
         """
         sos = self.sos
-        data = empty((self.source.numsamples, self.source.numchannels))
+        data = empty((self.source.num_samples, self.source.num_channels))
         j = 0
         for block in self.source.result(num):
             ns, nc = block.shape
             data[j : j + ns] = block
             j += ns
         # filter one channel at a time to save memory
-        for j in range(self.source.numchannels):
+        for j in range(self.source.num_channels):
             data[:, j] = sosfiltfilt(sos, data[:, j])
         j = 0
         ns = data.shape[0]
@@ -1569,13 +1598,13 @@ class TimeExpAverage(Filter):
     I (non-standard) -> 35 ms.
     """
 
-    #: time weighting
-    weight = Trait('F', {'F': 0.125, 'S': 1.0, 'I': 0.035}, desc='time weighting')
+    # time weighting
+    weight = Map({'F': 0.125, 'S': 1.0, 'I': 0.035}, default_value='F', desc='time weighting')
 
     sos = Property(depends_on=['weight', 'source.digest'])
 
     # internal identifier
-    digest = Property(depends_on=['source.digest', '__class__', 'weight'])
+    digest = Property(depends_on=['source.digest', 'weight'])
 
     @cached_property
     def _get_digest(self):
@@ -1590,15 +1619,15 @@ class TimeExpAverage(Filter):
 
 
 class FiltFreqWeight(Filter):
-    """Frequency weighting filter accoring to IEC 61672."""
+    """Frequency weighting filter according to IEC 61672."""
 
-    #: weighting characteristics
-    weight = Trait('A', ('A', 'C', 'Z'), desc='frequency weighting')
+    # weighting characteristics
+    weight = Enum('A', 'C', 'Z', desc='frequency weighting')
 
     sos = Property(depends_on=['weight', 'source.digest'])
 
     # internal identifier
-    digest = Property(depends_on=['source.digest', '__class__', 'weight'])
+    digest = Property(depends_on=['source.digest', 'weight'])
 
     @cached_property
     def _get_digest(self):
@@ -1628,39 +1657,43 @@ class FiltFreqWeight(Filter):
         return tf2sos(b, a)
 
 
+@deprecated_alias({'numbands': 'num_bands'}, read_only=True)
 class FilterBank(TimeOut):
     """Abstract base class for IIR filter banks based on scipy lfilter
     implements a bank of parallel filters.
 
-    Should not be instanciated by itself
+    Should not be instantiated by itself.
     """
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
-    #: List of filter coefficients for all filters
+    # List of filter coefficients for all filters
     sos = Property()
 
-    #: List of labels for bands
+    # List of labels for bands
     bands = Property()
 
-    #: Number of bands
-    numbands = Property()
+    # Number of bands
+    num_bands = Property()
 
-    #: Number of bands
-    numchannels = Property()
+    # Number of bands
+    num_channels = Property()
 
+    @abstractmethod
     def _get_sos(self):
-        return [tf2sos([1], [1])]
+        """Returns a list of second order section coefficients."""
 
+    @abstractmethod
     def _get_bands(self):
-        return ['']
+        """Returns a list of labels for the bands."""
 
-    def _get_numbands(self):
-        return 0
+    @abstractmethod
+    def _get_num_bands(self):
+        """Returns the number of bands."""
 
-    def _get_numchannels(self):
-        return self.numbands * self.source.numchannels
+    def _get_num_channels(self):
+        return self.num_bands * self.source.num_channels
 
     def result(self, num):
         """Python generator that yields the output block-wise.
@@ -1673,16 +1706,16 @@ class FilterBank(TimeOut):
 
         Returns
         -------
-        Samples in blocks of shape (num, numchannels).
+        Samples in blocks of shape (num, num_channels).
             Delivers the bandpass filtered output of source.
             The last block may be shorter than num.
 
         """
-        numbands = self.numbands
-        snumch = self.source.numchannels
+        numbands = self.num_bands
+        snumch = self.source.num_channels
         sos = self.sos
         zi = [zeros((sos[0].shape[0], 2, snumch)) for _ in range(numbands)]
-        res = zeros((num, self.numchannels), dtype='float')
+        res = zeros((num, self.num_channels), dtype='float')
         for block in self.source.result(num):
             for i in range(numbands):
                 res[:, i * snumch : (i + 1) * snumch], zi[i] = sosfilt(sos[i], block, axis=0, zi=zi[i])
@@ -1692,26 +1725,26 @@ class FilterBank(TimeOut):
 class OctaveFilterBank(FilterBank):
     """Octave or third-octave filter bank."""
 
-    #: Lowest band center frequency index; defaults to 21 (=125 Hz).
+    # Lowest band center frequency index; defaults to 21 (=125 Hz).
     lband = Int(21, desc='lowest band center frequency index')
 
-    #: Lowest band center frequency index + 1; defaults to 40 (=8000 Hz).
+    # Lowest band center frequency index + 1; defaults to 40 (=8000 Hz).
     hband = Int(40, desc='lowest band center frequency index')
 
-    #: Octave fraction: 'Octave' or 'Third octave'; defaults to 'Octave'.
-    fraction = Trait('Octave', {'Octave': 1, 'Third octave': 3}, desc='fraction of octave')
+    # Octave fraction: 'Octave' or 'Third octave'; defaults to 'Octave'.
+    fraction = Map({'Octave': 1, 'Third octave': 3}, default_value='Octave', desc='fraction of octave')
 
-    #: List of filter coefficients for all filters
+    # List of filter coefficients for all filters
     ba = Property(depends_on=['lband', 'hband', 'fraction', 'source.digest'])
 
-    #: List of labels for bands
+    # List of labels for bands
     bands = Property(depends_on=['lband', 'hband', 'fraction'])
 
-    #: Number of bands
-    numbands = Property(depends_on=['lband', 'hband', 'fraction'])
+    # Number of bands
+    num_bands = Property(depends_on=['lband', 'hband', 'fraction'])
 
     # internal identifier
-    digest = Property(depends_on=['source.digest', '__class__', 'lband', 'hband', 'fraction', 'order'])
+    digest = Property(depends_on=['source.digest', 'lband', 'hband', 'fraction', 'order'])
 
     @cached_property
     def _get_digest(self):
@@ -1722,7 +1755,7 @@ class OctaveFilterBank(FilterBank):
         return [10 ** (i / 10) for i in range(self.lband, self.hband, 4 - self.fraction_)]
 
     @cached_property
-    def _get_numbands(self):
+    def _get_num_bands(self):
         return len(self.bands)
 
     @cached_property
@@ -1736,26 +1769,27 @@ class OctaveFilterBank(FilterBank):
         return sos
 
 
+@deprecated_alias({'name': 'file'})
 class WriteWAV(TimeOut):
     """Saves time signal from one or more channels as mono/stereo/multi-channel
     `*.wav` file.
     """
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
-    #: Name of the file to be saved. If none is given, the name will be
-    #: automatically generated from the sources.
-    name = File(filter=['*.wav'], desc='name of wave file')
+    # Name of the file to be saved. If none is given, the name will be
+    # automatically generated from the sources.
+    file = File(filter=['*.wav'], desc='name of wave file')
 
-    #: Basename for cache, readonly.
-    basename = Property(depends_on='digest')
+    # Basename for cache, readonly.
+    basename = Property(depends_on=['digest'])
 
-    #: Channel(s) to save. List can only contain one or two channels.
-    channels = ListInt(desc='channel to save')
+    # Channel(s) to save. List can only contain one or two channels.
+    channels = List(int, desc='channel to save')
 
     # internal identifier
-    digest = Property(depends_on=['source.digest', 'channels', '__class__'])
+    digest = Property(depends_on=['source.digest', 'channels'])
 
     @cached_property
     def _get_digest(self):
@@ -1763,18 +1797,15 @@ class WriteWAV(TimeOut):
 
     @cached_property
     def _get_basename(self):
-        obj = self.source  # start with source
-        try:
-            while obj:
-                if 'basename' in obj.all_trait_names():  # at original source?
-                    basename = obj.basename  # get the name
-                    break
-                obj = obj.source  # traverse down until original data source
-            else:
-                basename = 'void'
-        except AttributeError:
-            basename = 'void'  # if no file source is found
-        return basename
+        warn(
+            (
+                f'The basename attribute of a {self.__class__.__name__} object is deprecated'
+                ' and will be removed in a future release!'
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return find_basename(self.source)
 
     def save(self):
         """Saves source output to one- or multiple-channel `*.wav` file."""
@@ -1783,54 +1814,59 @@ class WriteWAV(TimeOut):
             msg = 'No channels given for output.'
             raise ValueError(msg)
         if nc > 2:
-            warn('More than two channels given for output, exported file will have %i channels' % nc, stacklevel=1)
-        if self.name == '':
+            warn(f'More than two channels given for output, exported file will have {nc:d} channels', stacklevel=1)
+        if self.file == '':
             name = self.basename
             for nr in self.channels:
-                name += '_%i' % nr
+                name += f'{nr:d}'
             name += '.wav'
         else:
-            name = self.name
-        wf = wave.open(name, 'w')
-        wf.setnchannels(nc)
-        wf.setsampwidth(2)
-        wf.setframerate(self.source.sample_freq)
-        wf.setnframes(self.source.numsamples)
-        mx = 0.0
-        ind = array(self.channels)
-        for data in self.source.result(1024):
-            mx = max(abs(data[:, ind]).max(), mx)
-        scale = 0.9 * 2**15 / mx
-        for data in self.source.result(1024):
-            wf.writeframesraw(array(data[:, ind] * scale, dtype=int16).tostring())
-        wf.close()
+            name = self.file
+        with wave.open(name, 'w') as wf:
+            wf.setnchannels(nc)
+            wf.setsampwidth(2)
+            wf.setframerate(self.source.sample_freq)
+            wf.setnframes(self.source.num_samples)
+            mx = 0.0
+            ind = array(self.channels)
+            for data in self.source.result(1024):
+                mx = max(abs(data[:, ind]).max(), mx)
+            scale = 0.9 * 2**15 / mx
+            for data in self.source.result(1024):
+                wf.writeframesraw(array(data[:, ind] * scale, dtype=int16).tostring())
+
+    def result(self, num):
+        msg = 'result method not implemented yet! Data from source will be passed without transformation.'
+        warn(msg, Warning, stacklevel=2)
+        yield from self.source.result(num)
 
 
+@deprecated_alias({'name': 'file', 'numsamples_write': 'num_samples_write', 'writeflag': 'write_flag'})
 class WriteH5(TimeOut):
     """Saves time signal as `*.h5` file."""
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
-    #: Name of the file to be saved. If none is given, the name will be
-    #: automatically generated from a time stamp.
-    name = File(filter=['*.h5'], desc='name of data file')
+    # Name of the file to be saved. If none is given, the name will be
+    # automatically generated from a time stamp.
+    file = File(filter=['*.h5'], desc='name of data file')
 
-    #: Number of samples to write to file by `result` method.
-    #: defaults to -1 (write as long as source yields data).
-    numsamples_write = Int(-1)
+    # Number of samples to write to file by `result` method.
+    # defaults to -1 (write as long as source yields data).
+    num_samples_write = Int(-1)
 
     # flag that can be raised to stop file writing
-    writeflag = Bool(True)
+    write_flag = Bool(True)
 
     # internal identifier
-    digest = Property(depends_on=['source.digest', '__class__'])
+    digest = Property(depends_on=['source.digest'])
 
-    #: The floating-number-precision of entries of H5 File corresponding
-    #: to numpy dtypes. Default is 32 bit.
-    precision = Trait('float32', 'float64', desc='precision of H5 File')
+    # The floating-number-precision of entries of H5 File corresponding
+    # to numpy dtypes. Default is 32 bit.
+    precision = Enum('float32', 'float64', desc='precision of H5 File')
 
-    #: Metadata to be stored in HDF5 file object
+    # Metadata to be stored in HDF5 file object
     metadata = Dict(desc='metadata to be stored in .h5 file')
 
     @cached_property
@@ -1838,15 +1874,15 @@ class WriteH5(TimeOut):
         return digest(self)
 
     def create_filename(self):
-        if self.name == '':
+        if self.file == '':
             name = datetime.now(tz=timezone.utc).isoformat('_').replace(':', '-').replace('.', '_')
-            self.name = path.join(config.td_dir, name + '.h5')
+            self.file = path.join(config.td_dir, name + '.h5')
 
     def get_initialized_file(self):
         file = _get_h5file_class()
         self.create_filename()
-        f5h = file(self.name, mode='w')
-        f5h.create_extendable_array('time_data', (0, self.numchannels), self.precision)
+        f5h = file(self.file, mode='w')
+        f5h.create_extendable_array('time_data', (0, self.num_channels), self.precision)
         ac = f5h.get_data_by_reference('time_data')
         f5h.set_node_attribute(ac, 'sample_freq', self.sample_freq)
         self.add_metadata(f5h)
@@ -1866,6 +1902,8 @@ class WriteH5(TimeOut):
         if nitems > 0:
             f5h.create_new_group('metadata', '/')
             for key, value in self.metadata.items():
+                if isinstance(value, str):
+                    value = array(value, dtype='S')
                 f5h.create_array('/metadata', key, value)
 
     def result(self, num):
@@ -1881,19 +1919,19 @@ class WriteH5(TimeOut):
 
         Returns
         -------
-        Samples in blocks of shape (num, numchannels).
+        Samples in blocks of shape (num, num_channels).
             The last block may be shorter than num.
             Echos the source output, but reads it from cache
-            when available and prevents unnecassary recalculation.
+            when available and prevents unnecessary recalculation.
 
         """
-        self.writeflag = True
+        self.write_flag = True
         f5h = self.get_initialized_file()
         ac = f5h.get_data_by_reference('time_data')
         scount = 0
-        stotal = self.numsamples_write
+        stotal = self.num_samples_write
         source_gen = self.source.result(num)
-        while self.writeflag:
+        while self.write_flag:
             sleft = stotal - scount
             if stotal != -1 and sleft > 0:
                 anz = min(num, sleft)
@@ -1913,17 +1951,17 @@ class WriteH5(TimeOut):
 
 
 class TimeConvolve(TimeOut):
-    """Uniformly partitioned overlap-save method (UPOLS) for fast convolution in the frequency domain.
+    """Fast frequency domain convolution with the Uniformly partitioned overlap-save method (UPOLS).
 
     See :cite:`Wefers2015` for details.
     """
 
-    #: Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
+    # Data source; :class:`~acoular.base.SamplesGenerator` or derived object.
     source = Instance(SamplesGenerator)
 
-    #: Convolution kernel in the time domain.
-    #: The second dimension of the kernel array has to be either 1 or match :attr:`~SamplesGenerator.numchannels`.
-    #: If only a single kernel is supplied, it is applied to all channels.
+    # Convolution kernel in the time domain. The second dimension of the kernel array has to be
+    # either 1 or match :attr:`~SamplesGenerator.num_channels`. If only a single kernel is supplied,
+    # it is applied to all channels.
     kernel = CArray(dtype=float, desc='Convolution kernel.')
 
     _block_size = Int(desc='Block size')
@@ -1934,7 +1972,7 @@ class TimeConvolve(TimeOut):
     )
 
     # internal identifier
-    digest = Property(depends_on=['source.digest', 'kernel', '__class__'])
+    digest = Property(depends_on=['source.digest', 'kernel'])
 
     @cached_property
     def _get_digest(self):
@@ -1949,9 +1987,9 @@ class TimeConvolve(TimeOut):
         if self.kernel.ndim > 2:
             msg = 'Only one or two dimensional kernels accepted.'
             raise ValueError(msg)
-        # check if number of kernels matches numchannels
-        if self.kernel.shape[1] not in (1, self.source.numchannels):
-            msg = 'Number of kernels must be either `numchannels` or one.'
+        # check if number of kernels matches num_channels
+        if self.kernel.shape[1] not in (1, self.source.num_channels):
+            msg = 'Number of kernels must be either `num_channels` or one.'
             raise ValueError(msg)
 
     # compute the rfft of the kernel blockwise
@@ -1985,7 +2023,7 @@ class TimeConvolve(TimeOut):
 
         Returns
         -------
-        Samples in blocks of shape (num, numchannels).
+        Samples in blocks of shape (num, num_channels).
             The last block may be shorter than num.
 
         """
@@ -1993,8 +2031,8 @@ class TimeConvolve(TimeOut):
         # initialize variables
         self._block_size = num
         L = self.kernel.shape[0]
-        N = self.source.numchannels
-        M = self.source.numsamples
+        N = self.source.num_channels
+        M = self.source.num_samples
         numblocks_kernel = int(ceil(L / num))  # number of kernel blocks
         Q = int(ceil(M / num))  # number of signal blocks
         R = int(ceil((L + M - 1) / num))  # number of output blocks
@@ -2044,13 +2082,13 @@ class TimeConvolve(TimeOut):
 
 
 @nb.jit(nopython=True, cache=True)
-def _append_to_fdl(fdl, idx, numblocks_kernel, buff):
+def _append_to_fdl(fdl, idx, numblocks_kernel, buff):  # pragma: no cover
     fdl[idx] = buff
     idx = int(idx + 1 % numblocks_kernel)
 
 
 @nb.jit(nopython=True, cache=True)
-def _spectral_sum(out, fdl, kb):
+def _spectral_sum(out, fdl, kb):  # pragma: no cover
     P, B, N = kb.shape
     for n in range(N):
         for b in range(B):
@@ -2062,17 +2100,18 @@ def _spectral_sum(out, fdl, kb):
 
 
 class MaskedTimeInOut(MaskedTimeOut):
-    """Signal processing block for channel and sample selection (alias for :class:`~acoular.tprocess.MaskedTimeOut`.).
+    """Signal processing block for channel and sample selection.
 
     .. deprecated:: 24.10
-        Using :class:`~acoular.tprocess.MaskedTimeInOut` is deprecated and will be removed in Acoular
-        version 25.07. Use :class:`~acoular.tprocess.MaskedTimeOut` instead.
+        Using :class:`~acoular.tprocess.MaskedTimeInOut` is deprecated and will be removed in
+        Acoular version 25.07. Use :class:`~acoular.tprocess.MaskedTimeOut` instead.
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         warn(
-            'Using MaskedTimeInOut is deprecated and will be removed in Acoular version 25.07. Use class MaskedTimeOut instead.',
+            'Using MaskedTimeInOut is deprecated and will be removed in Acoular version 25.07. \
+            Use class MaskedTimeOut instead.',
             DeprecationWarning,
             stacklevel=2,
         )

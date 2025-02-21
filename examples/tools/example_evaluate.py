@@ -23,26 +23,26 @@ from acoular.tools import MetricEvaluator
 
 sfreq = 51200
 duration = 1
-nsamples = duration * sfreq
+num_samples = duration * sfreq
 micgeofile = Path(ac.__file__).parent / 'xml' / 'array_64.xml'
 
 # %%
 # Generate test data, in real life this would come from an array measurement
 
-mg = ac.MicGeom(from_file=micgeofile)
-n1 = ac.WNoiseGenerator(sample_freq=sfreq, numsamples=nsamples, seed=1)
-n2 = ac.WNoiseGenerator(sample_freq=sfreq, numsamples=nsamples, seed=2, rms=0.7)
-n3 = ac.WNoiseGenerator(sample_freq=sfreq, numsamples=nsamples, seed=3, rms=0.5)
-p1 = ac.PointSource(signal=n1, mics=mg, loc=(-0.1, -0.1, 0.3))
-p2 = ac.PointSource(signal=n2, mics=mg, loc=(0.15, 0, 0.3))
-p3 = ac.PointSource(signal=n3, mics=mg, loc=(0, 0.1, 0.3))
+mg = ac.MicGeom(file=micgeofile)
+n1 = ac.WNoiseGenerator(sample_freq=sfreq, num_samples=num_samples, seed=1)
+n2 = ac.WNoiseGenerator(sample_freq=sfreq, num_samples=num_samples, seed=2, rms=0.7)
+n3 = ac.WNoiseGenerator(sample_freq=sfreq, num_samples=num_samples, seed=3, rms=0.5)
+p1 = ac.PointSource(signal=n1, mics=mg, loc=(-0.1, -0.1, -0.3))
+p2 = ac.PointSource(signal=n2, mics=mg, loc=(0.15, 0, -0.3))
+p3 = ac.PointSource(signal=n3, mics=mg, loc=(0, 0.1, -0.3))
 pa = ac.Mixer(source=p1, sources=[p2, p3])
 
 # %%
 # Analyze the data and generate a deconvolved source map with CLEAN-SC
 
 ps = ac.PowerSpectra(source=pa, block_size=128, window='Hanning')
-rg = ac.RectGrid(x_min=-0.2, x_max=0.2, y_min=-0.2, y_max=0.2, z=0.3, increment=0.01)
+rg = ac.RectGrid(x_min=-0.2, x_max=0.2, y_min=-0.2, y_max=0.2, z=-0.3, increment=0.01)
 st = ac.SteeringVector(grid=rg, mics=mg, ref=1.0)
 bb = ac.BeamformerCleansc(freq_data=ps, steer=st)
 pm = bb.synthetic(8000, 0)
@@ -54,7 +54,7 @@ Lm = ac.L_p(pm)
 # Therefore, we define a custom grid containing the source locations.
 
 target_grid = ac.ImportGrid(
-    gpos_file=np.array(
+    pos=np.array(
         [
             list(p1.loc),
             list(p2.loc),
@@ -71,8 +71,8 @@ target_data = np.array([[n1.rms**2 / nfft], [n2.rms**2 / nfft], [n3.rms**2 / nff
 
 # %%
 # Finally, we use the :class:`acoular.tools.metrics.MetricEvaluator` class to evaluate the
-# reconstruction accuracy of the beamforming algorithm with three different metrics.
-# A circular sector with a radius of 5% of the aperture is used to define the sectors for the evaluation.
+# reconstruction accuracy of the beamforming algorithm with three different metrics. A circular
+# sector with a radius of 5% of the aperture is used to define the sectors for the evaluation.
 
 mv = MetricEvaluator(
     sector=ac.CircSector(r=0.05 * mg.aperture),

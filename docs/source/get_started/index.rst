@@ -38,7 +38,7 @@ This makes all the functionality available needed for the beamforming analysis. 
 
 .. ipython::
 
-    In [1]: ts = acoular.TimeSamples( name='three_sources.h5' )
+    In [1]: ts = acoular.TimeSamples( file='three_sources.h5' )
 
 The ts object now provides access to the HDF5 file and information stored in it. 
 
@@ -92,7 +92,7 @@ The positions of the microphones are needed for beamforming, so we create a :cla
 
     In [1]: micgeofile = path.join(path.split(acoular.__file__)[0],'xml','array_64.xml')
 
-    In [1]: mg = acoular.MicGeom( from_file=micgeofile )
+    In [1]: mg = acoular.MicGeom( file=micgeofile )
 
 In order to plot the microphone arrangement, we make use of the convenient matplotlib library with its pylab interface:
 
@@ -102,7 +102,7 @@ In order to plot the microphone arrangement, we make use of the convenient matpl
 
     In [1]: plt.ion() # switch on interactive plotting mode
 
-    In [1]: plt.plot(mg.mpos[0],mg.mpos[1],'o')
+    In [1]: plt.plot(mg.pos[0],mg.pos[1],'o')
 
 .. figure:: array64_py3colormap.png
    :align: center

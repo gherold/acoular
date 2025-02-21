@@ -4,9 +4,9 @@
 
 [project]
 name = "acoular"
-version = "24.07"
+dynamic = ["version"]
 description = "Python library for acoustic beamforming"
-requires-python = ">=3.10,<=12"
+requires-python = ">=3.10,<3.14"
 authors = [
     {name = "Acoular Development Team", email = "info@acoular.org"},
 ]
@@ -26,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "numpy",
@@ -66,8 +67,14 @@ docs = [
 
 tests = [
     "pytest",
+    "pytest-mock",
     "pytest-cov",
+    "pytest-regtest",
+    "pytest-cases",
+    "pytest-env",
+    "pytest-profiling",
     "sounddevice",
+    "pylops",
     "traitsui",
     "h5py",
     "PyYAML",
@@ -76,7 +83,7 @@ tests = [
 dev = [
     "acoular[docs,full,tests]",
     "hatch",
-    "ruff==0.4.1",
+    "ruff==0.8.1", # remember to change version pin in docs/source/contributing/install.rst
 ]
 
 [project.urls]
@@ -88,12 +95,15 @@ repository = "https://github.com/acoular/acoular"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "acoular/version.py"
+
 [tool.hatch.envs.hatch-static-analysis]
-dependencies = ["ruff==0.4.1"]
+dependencies = ["ruff==0.8.1"]
 config-path = [".ruff.toml"]
 
 [tool.hatch.envs.docs]
-python = "3.12"
+python = "3.13"
 dependencies = [
     "acoular[docs]"
 ]
@@ -107,13 +117,18 @@ dependencies = [
 ]
 
 [[tool.hatch.envs.tests.matrix]]
-python = ["3.10", "3.11", "3.12"]
+python = ["3.10", "3.11", "3.12", "3.13"]
 
 [tool.hatch.envs.tests.scripts]
 import = ["python -c \"import acoular\""]
-test = ["python -m pytest -v tests"]
+test = ["python -m pytest -v --durations=10 tests"]
+reset_regtest = ["python -m pytest -v --regtest-reset tests/regression"]
+profile = ["test --profile-svg"] 
 demo = ["python -c \"import acoular; acoular.demo.acoular_demo.run()\""]
-coverage = ["test --cov=acoular --cov-report html --cov-report term-missing"]
+coverage = [
+    "test --cov=acoular --cov-report html --cov-report term-missing",
+    "python -m pytest -v --cov=acoular --cov-report html --cov-report term-missing --cov-append --doctest-modules acoular",
+    ]
 doctest = ["python -m pytest --doctest-modules acoular"]
 
 [tool.hatch.envs.tests.overrides]
@@ -129,3 +144,30 @@ include = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["acoular"]
+
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "error", # treat warnings as errors
+    "ignore::pluggy.PluggyTeardownRaisedWarning", # raised internally by pytest-regtest
+    "ignore:numpy.core.multiarray is deprecated*:DeprecationWarning", # raised internally by pylops
+    "ignore:module 'sre_parse' is deprecated:DeprecationWarning", # raised internally by traits
+    "ignore:module 'sre_constants' is deprecated:DeprecationWarning", # raised internally by traits
+    "ignore:The TBB threading layer requires TBB version:numba.core.errors.NumbaWarning", # raised internally by numba
+    "ignore:FNV hashing is not implemented in Numba:UserWarning", # raised internally by numba
+    "ignore:`scipy.special.sph_harm` is deprecated*:DeprecationWarning", # raised by SciPy
+    # Suppress warnings about unclosed files in tables at the end of the tests
+    "ignore:Closing remaining open file*:tables.exceptions.UnclosedFileWarning",
+]
+env = [
+    "OPENBLAS_NUM_THREADS=1"
+]
+
+[tool.coverage.run]
+omit = [
+    "acoular/demo/acoular_demo.py",
+    "acoular/base.py",
+    "acoular/tfastfuncs.py",
+    "acoular/fastFuncs.py",
+    "acoular/deprecation",
+    ]

@@ -12,13 +12,13 @@
 # imports from other packages
 from numpy import arange, array, r_, sort
 from scipy.interpolate import splev, splprep
-from traits.api import Dict, Float, HasPrivateTraits, Property, Tuple, cached_property, property_depends_on
+from traits.api import Dict, Float, HasStrictTraits, Property, Tuple, cached_property, property_depends_on
 
 # acoular imports
 from .internal import digest
 
 
-class Trajectory(HasPrivateTraits):
+class Trajectory(HasStrictTraits):
     """Describes a trajectory from sampled points.
 
     Based on a discrete number of points in space and time, a
@@ -43,19 +43,17 @@ class Trajectory(HasPrivateTraits):
     tck = Property()
 
     # internal identifier
-    digest = Property(
-        depends_on=['points[]'],
-    )
+    digest = Property(depends_on=['points[]'])
 
     @cached_property
     def _get_digest(self):
         return digest(self)
 
-    @property_depends_on('points[]')
+    @property_depends_on(['points[]'])
     def _get_interval(self):
         return sort(list(self.points.keys()))[r_[0, -1]]
 
-    @property_depends_on('points[]')
+    @property_depends_on(['points[]'])
     def _get_tck(self):
         t = sort(list(self.points.keys()))
         xp = array([self.points[i] for i in t]).T
@@ -118,7 +116,6 @@ class Trajectory(HasPrivateTraits):
             t_start, t_end = self.interval
         if not t_end:
             t_end = self.interval[1]
-        # all locations are fetched in one go because thats much faster
-        # further improvement could be possible if interpolated locations are fetched
-        # in blocks
+        # all locations are fetched in one go because that is much faster further improvement could
+        # be possible if interpolated locations are fetched in blocks
         yield from zip(*self.location(arange(t_start, t_end, delta_t), der))

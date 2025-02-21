@@ -47,26 +47,29 @@ num = 3
 # Setting up the processing chain for the frequency domain methods.
 #
 # .. hint::
-#    An in-depth explanation for setting up the processing chain is given in the example :doc:`example_airfoil_in_open_jet_steering_vectors`.
+#    An in-depth explanation for setting up the processing chain is given in the example
+#    :doc:`example_airfoil_in_open_jet_steering_vectors`.
 
 
 ts = ac.MaskedTimeSamples(
-    name=time_data_file,
+    file=time_data_file,
     invalid_channels=[1, 7],
     start=0,
     stop=16000,
-    calib=ac.Calib(from_file=calib_file),
 )
-mics = ac.MicGeom(from_file=Path(ac.__file__).parent / 'xml' / 'array_56.xml', invalid_channels=[1, 7])
-grid = ac.RectGrid(x_min=-0.6, x_max=-0.0, y_min=-0.3, y_max=0.3, z=0.68, increment=0.05)
+calib = ac.Calib(source=ts, file=calib_file, invalid_channels=[1, 7])
+mics = ac.MicGeom(file=Path(ac.__file__).parent / 'xml' / 'array_56.xml', invalid_channels=[1, 7])
+grid = ac.RectGrid(x_min=-0.6, x_max=-0.0, y_min=-0.3, y_max=0.3, z=-0.68, increment=0.05)
 env = ac.Environment(c=346.04)
 st = ac.SteeringVector(grid=grid, mics=mics, env=env)
-f = ac.PowerSpectra(source=ts, window='Hanning', overlap='50%', block_size=128)
+f = ac.PowerSpectra(source=calib, window='Hanning', overlap='50%', block_size=128)
 
 
 # %%
-# Here, different frequency domain beamformers defined in the module :mod:`acoular.fbeamform` are used and the corresponding result maps are calculated by
-# evaluating the :meth:`acoular.fbeamform.BeamformerBase.synthetic` method with the desired frequency and bandwidth.
+# Here, different frequency domain beamformers defined in the module :mod:`acoular.fbeamform` are
+# used and the corresponding result maps are calculated by evaluating the
+# :meth:`acoular.fbeamform.BeamformerBase.synthetic` method with the desired frequency and
+# bandwidth.
 
 bb = ac.BeamformerBase(freq_data=f, steer=st, r_diag=True)
 bc = ac.BeamformerCapon(freq_data=f, steer=st, cached=False)
@@ -84,17 +87,18 @@ bgib = ac.BeamformerGIB(freq_data=f, steer=st, method='LassoLars', n=10)
 # %%
 # Plot result maps for different beamformers in frequency domain
 
-from pylab import colorbar, figure, imshow, show, subplot, tight_layout, title
 
-figure(1, (10, 6))
+import matplotlib.pyplot as plt
+
+plt.figure(1, (10, 6))
 i1 = 1  # no of subplot
 for b in (bb, bc, be, bm, bl, bo, bs, bd, bcmf, bf, bdp, bgib):
-    subplot(3, 4, i1)
+    plt.subplot(3, 4, i1)
     i1 += 1
     map = b.synthetic(cfreq, num)
     mx = ac.L_p(map.max())
-    imshow(ac.L_p(map.T), origin='lower', vmin=mx - 15, interpolation='nearest', extent=grid.extend())
-    colorbar()
-    title(b.__class__.__name__)
-    tight_layout()
-show()
+    plt.imshow(ac.L_p(map.T), origin='lower', vmin=mx - 15, interpolation='nearest', extent=grid.extend())
+    plt.colorbar()
+    plt.title(b.__class__.__name__)
+    plt.tight_layout()
+plt.show()
