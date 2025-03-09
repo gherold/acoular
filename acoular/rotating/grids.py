@@ -392,6 +392,10 @@ class EqCircGrid (Grid):
     nsteps = Property( 
         desc="number of grid points")
 
+    #: Grid polar positions as (3, :attr:`size`) array of floats;
+    #: readonly.
+    polar_pos = Property(desc='r, phi, z positions of grid points')
+    
     # internal identifier
     digest = Property( 
         depends_on = ['r_min', 'r_max', 'z', 'increment']
@@ -438,7 +442,8 @@ class EqCircGrid (Grid):
     def _get_extent(self):
         return (-self.r_max, self.r_max, -self.r_max, self.r_max)
         
-    def _get_pos( self, polar = False ):
+    
+    def get_positions( self, polar = False ):
         """
         Calculates grid co-ordinates.
         
@@ -482,8 +487,16 @@ class EqCircGrid (Grid):
                 xpos[1,ind:ind+n] = r * sin(phi)
                 xpos[2,ind:ind+n] = z
                 ind += n
-
         return xpos
+
+    @property_depends_on(['r_min', 'r_max', 'z', 'increment'])
+    def _get_pos(self):        
+        return self.get_positions(polar = False)
+    
+
+    @property_depends_on(['r_min', 'r_max', 'z', 'increment'])
+    def _get_polar_pos(self):        
+        return self.get_positions(polar = True)
 
 
     def index ( self, r, phi ):
@@ -552,7 +565,7 @@ class EqCircGrid (Grid):
                 return arange(self.size)[inds]
                 
         elif len(r) == 4:
-            xpos = self._get_pos(polar=True)
+            xpos = self.polar_pos
             inds0 = (xpos[0] >= r[0]) * (xpos[0] <= r[2]) # '*' = 'and'
             
             
@@ -674,7 +687,7 @@ class EqCircGrid3D (EqCircGrid):
             self.r_min = 0
         return digest( self )
 
-    def _get_gpos ( self, polar = False ):
+    def get_positions ( self, polar = False ):
         """
         Calculates grid co-ordinates.
         
@@ -730,6 +743,14 @@ class EqCircGrid3D (EqCircGrid):
 
         return xpos
 
+
+    @property_depends_on(['r_min', 'r_max', 'z_min', 'z_max', 'border', 'increment'])
+    def _get_pos(self):        
+        return self.get_positions(polar = False)
+    
+    @property_depends_on(['r_min', 'r_max', 'z_min', 'z_max', 'border', 'increment'])
+    def _get_polar_pos(self):        
+        return self.get_positions(polar = True)
 
     def index ( self, r, phi, z ):
         """
@@ -806,7 +827,7 @@ class EqCircGrid3D (EqCircGrid):
         elif len(r) == 4:
             np0 = self.shape[0] # number of EqCircGrid planes
             np1 = self.shape[1] # number of points in one plane
-            xpos = self._get_pos(polar=True).reshape(3,np0,np1)[:,0,:]
+            xpos = self.polar_pos.reshape(3,np0,np1)[:,0,:]
             inds0 = (xpos[0] >= r[0]) * (xpos[0] <= r[2]) # '*' = 'and'
             
             
