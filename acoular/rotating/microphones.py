@@ -119,7 +119,7 @@ with mpos after removing invalids)")
         
     
     @on_trait_change('file')
-    def import_mpos( self ):
+    def _import_mpos(self):
         """
         Import the microphone positions from .xml file.
         Automatically called when the file name changes.
