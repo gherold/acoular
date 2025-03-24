@@ -4,6 +4,17 @@ What's new
 Upcoming Release
 ------------------------
 
+25.03
+------------------------
+    **New features:**
+        * Introduces `rps` trait in :class:`~acoular.environments.FlowField`, that now correctly defines direction of rotation
+
+    **Documentation**
+        * add known issue section to install guide
+        * adds new docstrings to submodules :mod:`acoular.spectra`, :mod:`acoular.environments`, :mod:`acoular.fprocess`, :mod:`acoular.process`, :mod:`acoular.signals`, :mod:`acoular.sources`, :mod:`acoular.trajectory`
+
+    **Internal**
+        * fix broken meta.yaml (adds conda build stage to CI)
 
 25.01
 ------------------------
