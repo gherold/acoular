@@ -197,20 +197,8 @@ class Spectra (BaseSpectra):
     num_blocks = Property(
         desc="overall number of FFT blocks")
     
-    #: The floating-number-precision of entries of csm, eigenvalues and 
-    #: eigenvectors, corresponding to numpy dtypes. Default is 64 bit.
-    # precision = Trait('complex128', 'complex64', 
-    #                   desc="precision csm, eva, eve")
-    precision = Trait('complex128',{'complex128':'float64', 'complex64':'float32'}, 
-                      desc="precision spectrum")
-    
-
-    # internal identifier
-    digest = Property( 
-        depends_on = ['time_data.digest', 'block_size', 
-            'window', 'overlap', 'precision'], 
-        )
-    
+    #: A unique identifier for the spectra, based on its properties. (read-only)
+    digest = Property(depends_on=['source.digest', 'precision', 'block_size', 'window', 'overlap'])
     
     # hdf5 cache file
     h5f = Instance( H5CacheFileBase, transient = True )
@@ -249,21 +237,21 @@ class Spectra (BaseSpectra):
         """ power spectrum calculation """
         t = self.source
         wind = self.window_( self.block_size )
-        weight = dot( wind, wind )
-        wind = wind[newaxis, :].swapaxes( 0, 1 )
+        weight = np.dot( wind, wind )
+        wind = wind[np.newaxis, :].swapaxes( 0, 1 )
         numfreq = int(self.block_size/2 + 1)
 
         bs = self.block_size
         
         # use faster rfft if input is real, otherwise full fft
-        if isrealobj(next(t.result(1))):
+        if np.isrealobj(next(t.result(1))):
             fft_func = fft.rfft
-            temp = empty((2*bs, t.numchannels))
+            temp = np.empty((2*bs, t.numchannels))
         else:
             fft_func = fft.fft
-            temp = empty((2*bs, t.numchannels), dtype = self.precision)
+            temp = np.empty((2*bs, t.numchannels), dtype = self.precision)
             
-        powspec = zeros((numfreq,t.numchannels), dtype=self.precision_)
+        powspec = np.zeros((numfreq,t.numchannels), dtype=self.precision_)
         pos = bs
         posinc = bs/self.overlap_
         for data in t.result(bs):
@@ -358,7 +346,7 @@ class CollectGridTrajSpectra(Spectra):
 
     #: :class:`~acoular.trajectory.Trajectory` or derived object.
     #: Start time is assumed to be the same as for the samples.
-    trajectory = Trait(Trajectory, 
+    trajectory = Instance(Trajectory, 
         desc="trajectory of the grid center")
     
     
@@ -371,11 +359,11 @@ class CollectGridTrajSpectra(Spectra):
     rotation = Property(depends_on = ['trajectory','time_data.digest', 'z_orientation'])
     
     #: :class:`~acoular.microphones.MicGeom` object that provides the microphone locations.
-    mics = Trait(MicGeom, 
+    mics = Instance(MicGeom, 
         desc="microphone geometry")
     
     
-    grid = Trait(LatLongSphereGrid,
+    grid = Instance(LatLongSphereGrid,
                  desc="grid for spectra collection")
     
     ### for debugging and checking
@@ -427,14 +415,14 @@ class CollectGridTrajSpectra(Spectra):
     @cached_property
     def _get_rotation ( self ):
         if self.z_orientation:
-            Ry_neg = array([[ 1, 0, 0],
+            Ry_neg = np.array([[ 1, 0, 0],
                             [ 0, 1, 0],
                             [ 0, 0, 1]])
         else:
             
             t_end = self.source.num_samples/self.source.sample_freq
-            xstart = array(self.trajectory.location(0))
-            xend = array(self.trajectory.location(t_end))
+            xstart = np.array(self.trajectory.location(0))
+            xend = np.array(self.trajectory.location(t_end))
             vec = xend - xstart
     
             # distance in xz plane (y is ignored b/c gravity should orient drone), RAR
@@ -452,18 +440,18 @@ class CollectGridTrajSpectra(Spectra):
             
             # get negative (!) angle rotation matrix for left-oriented system
             # (negative because we want to rotate the coords in the other direction)
-            Ry_RAR = array([[ cos_alpha, 0, sin_alpha],
+            Ry_RAR = np.array([[ cos_alpha, 0, sin_alpha],
                             [         0, 1,         0],
                             [-sin_alpha, 0, cos_alpha]])# MicGeom-Setup im RAR
             
-            Ry_Wes = array([[-cos_alpha, sin_alpha,  0],
+            Ry_Wes = np.array([[-cos_alpha, sin_alpha,  0],
                             [         0,         0, -1],
                             [ sin_alpha, cos_alpha,  0]])# MicGeomSetup in Wesendorf
             
-            Ry_WesAIAA = array([[ 0, 1, 0],
+            Ry_WesAIAA = np.array([[ 0, 1, 0],
                                 [ 0, 0,-1],
                                 [ 1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für AIAA, Ri "Zurück")
-            Ry_WesDAGA = array([[ 0,-1, 0],
+            Ry_WesDAGA = np.array([[ 0,-1, 0],
                                 [ 0, 0,-1],
                                 [-1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für DAGA, Ri "Hin", wenn unten auch unverändert)
             Ry_neg = Ry_Wes
@@ -494,23 +482,23 @@ class CollectGridTrajSpectra(Spectra):
         # some abbreviations for spectra calculation
         t = self.source
         wind = self.window_( self.block_size )
-        weight = dot( wind, wind )
-        wind = wind[newaxis, :].swapaxes( 0, 1 )
+        weight = np.dot( wind, wind )
+        wind = wind[np.newaxis, :].swapaxes( 0, 1 )
         numfreq = int(self.block_size/2 + 1)
         bs = self.block_size
         
         # use faster rfft if input is real, otherwise full fft
-        if isrealobj(next(t.result(1))):
+        if np.isrealobj(next(t.result(1))):
             fft_func = fft.rfft
-            temp = zeros((2*bs, t.num_channels), dtype=self.precision_)
+            temp = np.zeros((2*bs, t.num_channels), dtype=self.precision_)
         else:
             fft_func = fft.fft
-            temp = zeros((2*bs, t.num_channels), dtype=self.precision)
+            temp = np.zeros((2*bs, t.num_channels), dtype=self.precision)
             
         # allocate array with gridpos-specific averaging number
-        grid_num_blocks = zeros((self.num_channels,),dtype=uint32)
+        grid_num_blocks = np.zeros((self.num_channels,),dtype=np.uint32)
         # allocate array fpr spectra results
-        powspec = zeros((numfreq, self.num_channels), dtype=self.precision_)
+        powspec = np.zeros((numfreq, self.num_channels), dtype=self.precision_)
         pos = bs
         posinc = bs/self.overlap_
         
@@ -522,7 +510,7 @@ class CollectGridTrajSpectra(Spectra):
         trajblock = self.rotraj.traj(t_start, delta_t=dt)
         
         ### temporary, for checking and debugging
-        spherical_coords = zeros((3, t.numchannels, self.num_blocks))
+        spherical_coords = np.zeros((3, t.numchannels, self.num_blocks))
         isc = 0       
         ### ------------------
         
@@ -537,12 +525,12 @@ class CollectGridTrajSpectra(Spectra):
                 
                 trajpos = next(trajblock)
                 # relative vector, from trajectory position to mics
-                xrel = mpos - array(trajpos)[:, newaxis]
+                xrel = mpos - np.array(trajpos)[:, np.newaxis]
                 
                 # get relative spherical coords
-                r = norm(xrel, axis=0)
-                thetas = arccos(xrel[2]/r) # polar angle / latitude (0..180°) 0..pi
-                phis =  arctan2(xrel[1], xrel[0]) # azimuthal angle / longitude (0..360°) 0..2pi
+                r = np.norm(xrel, axis=0)
+                thetas = np.arccos(xrel[2]/r) # polar angle / latitude (0..180°) 0..pi
+                phis =  np.arctan2(xrel[1], xrel[0]) # azimuthal angle / longitude (0..360°) 0..2pi
                 #thetas = arccos(-xrel[0]/r) # polar angle / latitude (0..180°) 0..pi
                 #phis =  arctan2(-xrel[2], -xrel[1]) # azimuthal angle / longitude (0..360°) 0..2pi
                 
@@ -566,7 +554,7 @@ class CollectGridTrajSpectra(Spectra):
             pos -= bs
         
         # onesided spectrum: multiplication by 2.0=sqrt(2)^2
-        powspec *= (2.0/self.block_size/weight/grid_num_blocks[newaxis,:])
+        powspec *= (2.0/self.block_size/weight/grid_num_blocks[np.newaxis,:])
         
         ### temp for debugging
         self._sph_coords = spherical_coords
@@ -663,7 +651,7 @@ class CollectDetailedGridTrajSpectra(CollectGridTrajSpectra):
         """ power spectrum calculation """
         
         freqs = self.fftfreq()
-        freqinds = array([searchsorted(freqs, freq) for freq in [500,1000,2000,4000,8000]])
+        freqinds = np.array([np.searchsorted(freqs, freq) for freq in [500,1000,2000,4000,8000]])
         
         # rotation matrix
         rot = self.rotation
@@ -678,27 +666,27 @@ class CollectDetailedGridTrajSpectra(CollectGridTrajSpectra):
         # some abbreviations for spectra calculation
         t = self.time_data
         wind = self.window_( self.block_size )
-        weight = dot( wind, wind )
-        wind = wind[newaxis, :].swapaxes( 0, 1 )
+        weight = np.dot( wind, wind )
+        wind = wind[np.newaxis, :].swapaxes( 0, 1 )
         numfreq = int(self.block_size/2 + 1)
         bs = self.block_size
         
         # use faster rfft if input is real, otherwise full fft
-        if isrealobj(next(t.result(1))):
+        if np.isrealobj(next(t.result(1))):
             fft_func = fft.rfft
-            temp = zeros((2*bs, t.numchannels), dtype=self.precision_)
+            temp = np.zeros((2*bs, t.numchannels), dtype=self.precision_)
         else:
             fft_func = fft.fft
-            temp = zeros((2*bs, t.numchannels), dtype=self.precision)
+            temp = np.zeros((2*bs, t.numchannels), dtype=self.precision)
             
         # allocate array with gridpos-specific averaging number
-        grid_num_blocks = zeros((self.numchannels,),dtype=uint32)
+        grid_num_blocks = np.zeros((self.numchannels,),dtype=np.uint32)
         
         # allocate history array, for 5 representative frequencies (500,1k,2k,4k,8k Hz)
-        history_per_grid = empty((self.num_blocks,self.numchannels,5),dtype=self.precision_)
-        history_per_grid[:] = nan
+        history_per_grid = np.empty((self.num_blocks,self.numchannels,5),dtype=self.precision_)
+        history_per_grid[:] = np.nan
         # allocate array fpr spectra results
-        powspec = zeros((numfreq, self.numchannels), dtype=self.precision_)
+        powspec = np.zeros((numfreq, self.numchannels), dtype=self.precision_)
         pos = bs
         posinc = bs/self.overlap_
         
@@ -710,7 +698,7 @@ class CollectDetailedGridTrajSpectra(CollectGridTrajSpectra):
         trajblock = self.rotraj.traj(t_start, delta_t=dt)
         
         ### temporary, for checking and debugging
-        spherical_coords = zeros((3, t.numchannels, self.num_blocks))
+        spherical_coords = np.zeros((3, t.numchannels, self.num_blocks))
         isc = 0       
         ### ------------------
         
@@ -725,12 +713,12 @@ class CollectDetailedGridTrajSpectra(CollectGridTrajSpectra):
                 
                 trajpos = next(trajblock)
                 # relative vector, from trajectory position to mics
-                xrel = mpos - array(trajpos)[:, newaxis]
+                xrel = mpos - np.array(trajpos)[:, np.newaxis]
                 
                 # get relative spherical coords
-                r = norm(xrel, axis=0)
-                thetas = arccos(xrel[2]/r) # polar angle / latitude (0..180°) 0..pi
-                phis =  arctan2(xrel[1], xrel[0]) # azimuthal angle / longitude (0..360°) 0..2pi
+                r = np.norm(xrel, axis=0)
+                thetas = np.arccos(xrel[2]/r) # polar angle / latitude (0..180°) 0..pi
+                phis =  np.arctan2(xrel[1], xrel[0]) # azimuthal angle / longitude (0..360°) 0..2pi
                 
                 ### temp for debugging
                 spherical_coords[0,:,isc] = r
@@ -753,7 +741,7 @@ class CollectDetailedGridTrajSpectra(CollectGridTrajSpectra):
             pos -= bs
         
         # onesided spectrum: multiplication by 2.0=sqrt(2)^2
-        powspec *= (2.0/self.block_size/weight/grid_num_blocks[newaxis,:])
+        powspec *= (2.0/self.block_size/weight/grid_num_blocks[np.newaxis,:])
         
         ### temp for debugging
         self._sph_coords = spherical_coords
@@ -884,7 +872,7 @@ class PowerSpectra(BaseSpectra):
         desc="cross spectral matrix")
     
     
-    diagonal = Trait('original', 'original', 'zero', 'reconstruct')
+    diagonal = Enum('original', 'original', 'zero', 'reconstruct')
     
        
     
@@ -894,7 +882,7 @@ class PowerSpectra(BaseSpectra):
     
     #: The floating-number-precision of entries of csm, eigenvalues and 
     #: eigenvectors, corresponding to numpy dtypes. Default is 64 bit.
-    precision = Trait('complex128', 'complex64', 
+    precision = Enum('complex128', 'complex64', 
                       desc="precision csm, eva, eve")
 
     #: Eigenvalues of the cross spectral matrix as an
@@ -1030,11 +1018,11 @@ class PowerSpectra(BaseSpectra):
         # create the full csm matrix via transposing and complex conj.
         # create the full csm matrix via transposingand complex conj.
         if self.diagonal == 'zero': # this is only for the time being, do this outside the function later on!
-            [fill_diagonal(csmUpper[cntFreq, :, :], 0) for cntFreq in range(csmUpper.shape[0])]
-            csmLower = csmUpper.conj().transpose(0,2,1)
+            [np.fill_diagonal(csm_upper[cntFreq, :, :], 0) for cntFreq in range(csm_upper.shape[0])]
+            csm_lower = csm_upper.conj().transpose(0,2,1)
         else:    
-            csmLower = csmUpper.conj().transpose(0,2,1)
-            [fill_diagonal(csmLower[cntFreq, :, :], 0) for cntFreq in range(csmLower.shape[0])]
+            csm_lower = csm_upper.conj().transpose(0,2,1)
+            [np.fill_diagonal(csm_lower[cntFreq, :, :], 0) for cntFreq in range(csm_lower.shape[0])]
         
         csm = csm_lower + csm_upper
         # onesided spectrum: multiplication by 2.0=sqrt(2)^2
@@ -1387,18 +1375,18 @@ class PowerSpectraDR( PowerSpectra ):
         fullcsm = self.calc_csm()
         csm = fullcsm[self.ind_low:self.ind_high]
         nc = csm.shape[-1]
-        idiag = arange(nc)
+        idiag = np.arange(nc)
         # calculate amplitude of entries
         for ind in range(csm.shape[0]):
-            ac = absolute(csm[ind])
+            ac = np.absolute(csm[ind])
             # get csm diagonal
-            dia = diag(ac)
+            dia = np.diag(ac)
             # get position and value of maximum in diagonal (position maybe not needed)
             # indmaxdia = argmax(dia)
             # max_dia = dia[indmaxdia]
             max_dia = max(dia)
             # get maximum from off-diagonal values
-            max_off = (ac-diag(dia)).max()
+            max_off = (ac-np.diag(dia)).max()
             # calculate 1st diag approximation with correction factor 
             new_dia = dia * (max_off / max_dia)
             # loop to approximate further
@@ -1406,7 +1394,7 @@ class PowerSpectraDR( PowerSpectra ):
                 # from diag new theoretical mode amplitudes
                 mode_amps = new_dia**0.5
                 # calculate csm amp estimate
-                new_ac = mode_amps[:,newaxis] * mode_amps[newaxis,:]
+                new_ac = mode_amps[:,np.newaxis] * mode_amps[np.newaxis,:]
                 # calculate difference to actual csm
                 diff = ac-new_ac # probably mostly positive vals
                 # set diag of diff to 0 (this is unwanted info)

@@ -1139,19 +1139,22 @@ class LatLongSphereGrid ( Grid ):
     @property_depends_on('num_lat, num_long')
     def _get_angles( self ):
         # start line at pole, point is offset by 1/2 step
-        theta, thetastep = linspace(0, pi, self.num_lat, endpoint=False, retstep=True)
+        theta, thetastep = np.linspace(0, np.pi, self.num_lat, endpoint=False, retstep=True)
         # start line at 0 meridian, point is offset by 1/2 step
-        phi, phistep  = linspace(0, 2*pi, self.num_long, endpoint=False, retstep=True)
-        return reshape(meshgrid(phi+phistep/2,theta+thetastep/2),(2,self.size),order='F')
+        phi, phistep  = np.linspace(0, 2 * np.pi, self.num_long, endpoint=False, retstep=True)
+        return np.reshape(
+            np.meshgrid(phi + phistep/2, theta + thetastep/2),
+            (2,self.size),
+            order='F')
     
     
     @property_depends_on('num_lat, num_long')
     def _get_gpos( self ):
         theta = self.angles[1]
         phi = self.angles[0]
-        return array([self.r*cos(phi)*sin(theta),
-                      self.r*sin(phi)*sin(theta),
-                      -self.r*cos(theta)])
+        return np.array([self.r * np.cos(phi) * np.sin(theta),
+                         self.r * np.sin(phi) * np.sin(theta),
+                        -self.r * np.cos(theta)])
     
     
     def index ( self, phi, theta):
@@ -1173,17 +1176,17 @@ class LatLongSphereGrid ( Grid ):
             The indices that give the grid point nearest to the given theta, phi
             co-ordinates from an array with the same shape as the grid.            
         """
-        thetastep = pi/self.num_lat
-        phistep = 2*pi/self.num_long
+        thetastep = np.pi/self.num_lat
+        phistep = 2*np.pi/self.num_long
         
         thetai = min(int(theta/thetastep),self.num_lat-1)
         
-        phii = int((phi%(2*pi))/phistep)
+        phii = int((phi%(2*np.pi))/phistep)
         
-        return ravel_multi_index((phii,thetai), self.shape)
+        return np.ravel_multi_index((phii,thetai), self.shape)
 
     def _get_extent(self):
-        return (0,2*pi,0,pi)
+        return (0, 2*np.pi, 0, np.pi)
 
 
 class EqualSphereGrid (LatLongSphereGrid):
@@ -1215,32 +1218,32 @@ class EqualSphereGrid (LatLongSphereGrid):
     #nlongs = CArray()
     phisteps = CArray() 
     
-    segment_indices = List([arange(1),
-                            arange(4)+1,
-                            arange(8)+4+1,
-                            arange(4)+8+4+1,
-                            arange(1)+8+4+1+4])
+    segment_indices = List([np.arange(1),
+                            np.arange(4)+1,
+                            np.arange(8)+4+1,
+                            np.arange(4)+8+4+1,
+                            np.arange(1)+8+4+1+4])
 
     
     def _calc_stuff(self):
-        nlongs = array([1,4,8,4,1])
+        nlongs = np.array([1,4,8,4,1])
         if self.num_long != 8: 
             raise NotImplementedError(f'Sphere partitioning with {self.num_long} longitudes not yet supported.')
-        theta_cap = arccos(8/9)
-        theta_ring = arccos(4/9)
+        theta_cap = np.arccos(8/9)
+        theta_ring = np.arccos(4/9)
         
-        self._theta_borders = [theta_cap,theta_ring,pi-theta_ring,pi-theta_cap]
-        self.phisteps = zeros((5,))
+        self._theta_borders = [theta_cap,theta_ring,np.pi-theta_ring,np.pi-theta_cap]
+        self.phisteps = np.zeros((5,))
         
-        angs = zeros((2, self.size))
-        angs[1,-1] = pi
+        angs = np.zeros((2, self.size))
+        angs[1,-1] = np.pi
         ind = 1
-        inner_thetas = (array(self._theta_borders)[1:]+array(self._theta_borders)[:-1])/2
+        inner_thetas = (np.array(self._theta_borders)[1:] + np.array(self._theta_borders)[:-1])/2
         for iphi,(nl,theta) in enumerate(zip(nlongs[1:-1],inner_thetas)):
-            phis, phistep = linspace(0,2*pi,nl,endpoint=False, retstep=True)
+            phis, phistep = np.linspace(0,2*np.pi,nl,endpoint=False, retstep=True)
             self.phisteps[iphi+1] = phistep
             angs[0,ind:ind+nl] = phis
-            angs[1,ind:ind+nl] = ones((nl,)) * theta
+            angs[1,ind:ind+nl] = np.ones((nl,)) * theta
             ind+=nl
         self._angs = angs        
         self._calc_flag = True
@@ -1282,10 +1285,10 @@ class EqualSphereGrid (LatLongSphereGrid):
              The indices that give the grid point nearest to the given theta, phi
              co-ordinates from an array with the same shape as the grid.            
          """
-         ind1 = searchsorted(array([0]+self.theta_borders),theta,side="right")
+         ind1 = np.searchsorted(np.array([0]+self.theta_borders),theta,side="right")
          if 0<ind1<4:
              #ind2 = int(phi/self.phisteps[ind1]-0.5)
-             ind2 = int( ((phi+self.phisteps[ind1]/2)%(2*pi))/self.phisteps[ind1]) 
+             ind2 = int( ((phi+self.phisteps[ind1]/2)%(2*np.pi))/self.phisteps[ind1]) 
              #ind2 = int( ((phi-phistep/2)%(2*pi))/phistep) 
 
              #print(ind1,ind2,phi,self.phisteps)

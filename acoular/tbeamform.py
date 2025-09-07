@@ -20,7 +20,7 @@ Implements beamformers in the time domain.
 
 import numpy as np
 import scipy.linalg as spla
-from traits.api import Bool, CArray, Enum, Float, Instance, Int, List, Map, Property, Range, cached_property
+from traits.api import Bool, CArray, Delegate, Enum, Float, Instance, Int, List, Map, Property, Range, cached_property
 
 from .base import SamplesGenerator, TimeOut
 from .fbeamform import SteeringVector
@@ -516,11 +516,11 @@ class DedopplerTimeTraj(BeamformerTimeTraj):
     def delay_and_sum(self,num,p_res,d_interp2,d_index,amp): 
         ''' standard delay-and-sum method, but without the summing ''' 
         if self.precision==64:
-            fdtype = float64
+            fdtype = np.float64
         else:
-            fdtype = float32
-        result = empty((num, self.num_channels), dtype=fdtype) # output array
-        autopow = empty((num, self.num_channels), dtype=fdtype) # output array
+            fdtype = np.float32
+        result = np.empty((num, self.num_channels), dtype=fdtype) # output array
+        autopow = np.empty((num, self.num_channels), dtype=fdtype) # output array
         # make sure to use steer_type='inverse' and ref=1 for steer
         _delayandnothing5(p_res, 
                           d_index[:,0,:], 
