@@ -7,10 +7,12 @@ Prerequisites
 -------------
 This "Getting started" tutorial assumes that the Acoular library is :doc:`installed<../install/index>` together with its dependencies and matplotlib, and that the demo finished successfully. If you did not run the demo yet, you should do so by typing into your python console
 
-.. code-block:: console
+.. ipython::
+    :okwarning:
 
-    > import acoular
-    > acoular.demo.acoular_demo.run()
+    In [1]: import acoular
+    
+    In [1]: acoular.demo.acoular_demo.run()
 
 This should, after some seconds, produce two pictures (a 64 microphone arrangement and a beamforming map with three sources). You may close the pictures in order to continue. 
 
@@ -36,7 +38,7 @@ This makes all the functionality available needed for the beamforming analysis. 
 
 .. ipython::
 
-    In [1]: ts = acoular.TimeSamples( name='three_sources.h5' )
+    In [1]: ts = acoular.TimeSamples( file='three_sources.h5' )
 
 The ts object now provides access to the HDF5 file and information stored in it. 
 
@@ -52,7 +54,7 @@ The beamforming shall be done in the frequency domain. In this case the cross sp
 
 .. ipython::
 
-    In [1]: ps = acoular.PowerSpectra( time_data=ts, block_size=128, window='Hanning' )
+    In [1]: ps = acoular.PowerSpectra( source=ts, block_size=128, window='Hanning' )
 
 The data for the calculation is to be taken from the ts object that was created before. Because the calculation of the cross spectral matrix is a time consuming process, no calculation is performed at the moment, but is **delayed** until the result is actually needed. This concept of **"lazy evaluation"** is applied wherever possible throughout the Acoular library. This prevents unnecessary time-consuming computations. Another option to set the parameters for the Welch method would have been to first create a 'blank' or 'default' :class:`~acoular.spectra.PowerSpectra` object and set the parameters, or traits of the object, afterwards:
 
@@ -60,7 +62,7 @@ The data for the calculation is to be taken from the ts object that was created 
 
     In [1]: ps = acoular.PowerSpectra()
 
-    In [1]: ps.time_data = ts
+    In [1]: ps.source = ts
 
     In [1]: ps.block_size = 128
 
@@ -72,8 +74,8 @@ Our aim is to produce a mapping of the acoustic sources. Because such a map can 
 
 .. ipython:: 
 
-    In [1]: rg = acoular.RectGrid( x_min=-0.2, x_max=0.2, y_min=-0.2, y_max=0.2, z=0.3, increment=0.01 )
-
+    In [1]: rg = acoular.RectGrid( x_min=-0.2, x_max=0.2, y_min=-0.2, y_max=0.2, z=-0.3, increment=0.01 )
+ 
 The traits assigned in brackets determine the dimensions of the grid and distance (increment) between individual source positions. Using
 
 .. ipython:: 
@@ -86,11 +88,11 @@ The positions of the microphones are needed for beamforming, so we create a :cla
 
 .. ipython:: 
 
-    In [1]: from os import path
+    In [1]: from pathlib import Path
 
-    In [1]: micgeofile = path.join(path.split(acoular.__file__)[0],'xml','array_64.xml')
+    In [1]: micgeofile = Path(acoular.__file__).parent / 'xml' / 'array_64.xml'
 
-    In [1]: mg = acoular.MicGeom( from_file=micgeofile )
+    In [1]: mg = acoular.MicGeom( file=micgeofile )
 
 In order to plot the microphone arrangement, we make use of the convenient matplotlib library with its pylab interface:
 
@@ -100,7 +102,7 @@ In order to plot the microphone arrangement, we make use of the convenient matpl
 
     In [1]: plt.ion() # switch on interactive plotting mode
 
-    In [1]: plt.plot(mg.mpos[0],mg.mpos[1],'o')
+    In [1]: plt.plot(mg.pos[0],mg.pos[1],'o')
 
 .. figure:: array64_py3colormap.png
    :align: center
@@ -134,7 +136,7 @@ Now let us plot the result:
 
     In [1]: plt.figure() # open new figure
 
-    In [1]: plt.imshow( Lm.T, origin='lower', vmin=Lm.max()-10, extent=rg.extend(), interpolation='bicubic')
+    In [1]: plt.imshow( Lm.T, origin='lower', vmin=Lm.max()-10, extent=rg.extent, interpolation='bicubic')
 
     In [1]: plt.colorbar()
 
@@ -157,10 +159,10 @@ Source Location        Level
 
 as would be expected from the values given in the table above.
 
-To play around with this simple example, download :download:`basic_beamformer_example.py <../../../examples/basic_beamformer_example.py>` change something and run it as a Python script.
+To play around with this simple example, download :download:`example_basic_beamforming.py <../../../examples/introductory_examples/example_basic_beamforming.py>` change something and run it as a Python script.
 
-.. literalinclude:: ../../../examples/basic_beamformer_example.py
+.. literalinclude:: ../../../examples/introductory_examples/example_basic_beamforming.py
 
-To see how the simulated data is generated, read :download:`three_sources.py <../../../examples/three_sources.py>`. 
+To see how the simulated data is generated, read :download:`example_three_sources.py <../../../examples/introductory_examples/example_three_sources.py>`. 
 
-.. literalinclude:: ../../../examples/three_sources.py
+.. literalinclude:: ../../../examples/introductory_examples/example_three_sources.py

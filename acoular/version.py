@@ -1,9 +1,9 @@
-# coding=UTF-8
-#------------------------------------------------------------------------------
-# Copyright (c) 2007-2021, Acoular Development Team.
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Copyright (c) Acoular Development Team.
+# ------------------------------------------------------------------------------
 
-# separate file to find out about version without importing the acoular lib
-__author__ = "Acoular Development Team"
-__date__ = "5 May 2021"
-__version__ = "21.05"
+"""Dedicated file to determine the package version without importing acoular."""
+
+__author__ = 'Acoular Development Team'
+__date__ = '24 July 2025'
+__version__ = '25.07'

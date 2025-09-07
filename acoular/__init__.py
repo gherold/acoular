@@ -1,69 +1,138 @@
-# coding=UTF-8
-#------------------------------------------------------------------------------
-# Copyright (c) 2007-2021, Acoular Development Team.
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Copyright (c) Acoular Development Team.
+# ------------------------------------------------------------------------------
 
-"""
-The Acoular library: several classes for the implemetation of 
-acoustic beamforming
-"""
+"""The Acoular library: several classes for the implementation of acoustic beamforming."""
 
-from .version import __author__, __date__, __version__
+import os  # noqa: I001
 
-import os 
-
-# workaround for problems with pyqt5 support, may be removed in the future
-try:
-    import pyface.qt
-except:
-    os.environ['QT_API'] = 'pyqt' 
-
-#     
+# config must be imported before any submodules containing numpy, see #322.
 from .configuration import config
 
-from .fileimport import time_data_import, csv_import, td_import, \
-bk_mat_import, datx_import
-try:
-    from .nidaqimport import nidaq_import
-except:
-    pass
-
-try:
-    from .sdinput import SoundDeviceSamplesGenerator
-except:
-    pass
-
-from .tbeamform import IntegratorSectorTime, DedopplerTimeTraj,\
-BeamformerTime, BeamformerTimeSq, BeamformerTimeTraj, BeamformerTimeSqTraj,\
-BeamformerCleant, BeamformerCleantSq, BeamformerCleantTraj, BeamformerCleantSqTraj
-from .tprocess import SamplesGenerator, TimeInOut, MaskedTimeInOut, ChannelMixer, \
-Mixer, TimeAverage, TimeReverse, TimePower, FiltFiltOctave, FiltOctave, TimeCache, \
-WriteWAV, WriteH5, SpatialInterpolator, SpatialInterpolatorRotation, Trigger, \
-SampleSplitter, AngleTracker, SpatialInterpolatorConstantRotation, Filter, \
-TimeExpAverage, FiltFreqWeight, TimeCumAverage, FilterBank, OctaveFilterBank, TimeConvolve
+from . import demo, tools, aiaa
+from .base import (
+    Generator,
+    InOut,
+    SamplesGenerator,
+    SpectraGenerator,
+    SpectraOut,
+    TimeOut,
+)
 from .calib import Calib
-from .trajectory import Trajectory
-from .grids import Grid, RectGrid, RectGrid3D, Sector,RectSector,CircSector,\
-    PolySector, MultiSector, MergeGrid, LineGrid, ImportGrid, ConvexSector,\
-    LatLongSphereGrid, EqualSphereGrid
-from .environments import cartToCyl, cylToCart, Environment, UniformFlowEnvironment, RotatingFlow, \
-FlowField, OpenJet, SlotJet, GeneralFlowEnvironment
+from .environments import (
+    Environment,
+    FlowField,
+    GeneralFlowEnvironment,
+    OpenJet,
+    RotatingFlow,
+    SlotJet,
+    UniformFlowEnvironment,
+    cartToCyl,
+    cylToCart,
+)
+from .fbeamform import (
+    BeamformerAdaptiveGrid,
+    BeamformerBase,
+    BeamformerCapon,
+    BeamformerClean,
+    BeamformerCleansc,
+    BeamformerCMF,
+    BeamformerDamas,
+    BeamformerDamasPlus,
+    BeamformerEig,
+    BeamformerFunctional,
+    BeamformerGIB,
+    BeamformerGridlessOrth,
+    BeamformerMusic,
+    BeamformerOrth,
+    BeamformerSODIX,
+    L_p,
+    PointSpreadFunction,
+    SteeringVector,
+    integrate,
+)
+from .fprocess import IRFFT, RFFT, AutoPowerSpectra, CrossPowerSpectra
+from .grids import (
+    CircSector,
+    ConvexSector,
+    Grid,
+    ImportGrid,
+    LineGrid,
+    MergeGrid,
+    MultiSector,
+    PolySector,
+    RectGrid,
+    RectGrid3D,
+    RectSector,
+    RectSector3D,
+    Sector,
+    LatLongSphereGrid,
+    EqualSphereGrid,
+)
 from .microphones import MicGeom
-from .spectra import Spectra, PowerSpectra, PowerSpectra as EigSpectra, synthetic,\
-    CollectGridTrajSpectra, CollectDetailedGridTrajSpectra
-
-from .fbeamform import BeamformerBase, BeamformerCapon, BeamformerEig, \
-BeamformerMusic, BeamformerDamas, BeamformerDamasPlus, BeamformerOrth,BeamformerCleansc, \
-BeamformerCMF,BeamformerSODIX, BeamformerClean, BeamformerFunctional, BeamformerGIB, L_p, integrate, \
-PointSpreadFunction, SteeringVector
-
-from .sources import PointSource, MovingPointSource, \
-TimeSamples, MaskedTimeSamples, PointSourceDipole, UncorrelatedNoiseSource, \
-SourceMixer, SphericalHarmonicSource, LineSource, MovingPointSourceDipole, \
-MovingLineSource
-from .signals import SineGenerator, WNoiseGenerator, SignalGenerator,\
-PNoiseGenerator, GenericSignalGenerator, FiltWNoiseGenerator
-
-from . import tools
-
-from . import demo
+from .process import Average, Cache, SampleSplitter
+from .sdinput import SoundDeviceSamplesGenerator
+from .signals import (
+    FiltWNoiseGenerator,
+    GenericSignalGenerator,
+    NoiseGenerator,
+    PeriodicSignalGenerator,
+    PNoiseGenerator,
+    SignalGenerator,
+    SineGenerator,
+    WNoiseGenerator,
+)
+from .sources import (
+    LineSource,
+    MaskedTimeSamples,
+    MovingLineSource,
+    MovingPointSource,
+    MovingPointSourceDipole,
+    PointSource,
+    PointSourceConvolve,
+    PointSourceDipole,
+    SourceMixer,
+    SphericalHarmonicSource,
+    TimeSamples,
+    UncorrelatedNoiseSource,
+)
+from .tools.helpers import synthetic
+from .spectra import BaseSpectra, PowerSpectra, PowerSpectraImport, CollectGridTrajSpectra, CollectDetailedGridTrajSpectra
+from .spectra import PowerSpectra as EigSpectra
+from .tbeamform import (
+    BeamformerCleant,
+    BeamformerCleantSq,
+    BeamformerCleantSqTraj,
+    BeamformerCleantTraj,
+    BeamformerTime,
+    BeamformerTimeSq,
+    BeamformerTimeSqTraj,
+    BeamformerTimeTraj,
+    IntegratorSectorTime,
+    DedopplerTimeTraj,
+)
+from .tprocess import (
+    AngleTracker,
+    ChannelMixer,
+    Filter,
+    FilterBank,
+    FiltFiltOctave,
+    FiltFreqWeight,
+    FiltOctave,
+    MaskedTimeOut,
+    Mixer,
+    OctaveFilterBank,
+    SpatialInterpolator,
+    SpatialInterpolatorConstantRotation,
+    SpatialInterpolatorRotation,
+    TimeConvolve,
+    TimeCumAverage,
+    TimeExpAverage,
+    TimePower,
+    TimeReverse,
+    Trigger,
+    WriteH5,
+    WriteWAV,
+)
+from .trajectory import Trajectory
+from .version import __author__, __date__, __version__
