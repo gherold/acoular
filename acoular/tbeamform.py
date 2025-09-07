@@ -29,7 +29,7 @@ from .grids import RectGrid
 # acoular imports
 from .internal import digest
 from .process import SamplesBuffer
-from .tfastfuncs import _delayandsum4, _delayandsum5, _delays, _delayandnothing5,
+from .tfastfuncs import _delayandsum4, _delayandsum5, _delays, _delayandnothing5
 from .trajectory import Trajectory
 
 
