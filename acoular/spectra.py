@@ -16,7 +16,7 @@ from abc import abstractmethod
 import numpy as np
 from scipy import fft
 from traits.api import (
-    ABCHasStrictTraits,
+    ABCHasStrictTraits, Trait,
     Bool,
     CArray,
     Delegate,
@@ -36,7 +36,7 @@ from .base import SamplesGenerator
 from .configuration import config
 from .deprecation import deprecated_alias
 from .fastFuncs import calcCSM
-from .grids import LatLongSphereGrid
+from .grids import LatLongSphereGrid, LatLongSphereGrid2025
 from .h5cache import H5cache
 from .h5files import H5CacheFileBase
 from .internal import digest
@@ -198,6 +198,15 @@ class Spectra (BaseSpectra):
     num_blocks = Property(
         desc="overall number of FFT blocks")
     
+
+    #: The floating-number-precision of entries of csm, eigenvalues and 
+    #: eigenvectors, corresponding to numpy dtypes. Default is 64 bit.
+    # precision = Trait('complex128', 'complex64', 
+    #                   desc="precision csm, eva, eve")
+    precision = Trait('complex128',{'complex128':'float64', 'complex64':'float32'}, 
+                      desc="precision spectrum")
+    
+
     #: A unique identifier for the spectra, based on its properties. (read-only)
     digest = Property(depends_on=['source.digest', 'precision', 'block_size', 'window', 'overlap'])
     
@@ -353,8 +362,7 @@ class CollectGridTrajSpectra(Spectra):
     
     #: if set to True, ignore first and last pos in traj for rotational orientation
     z_orientation = Bool(False)
-    
-    
+
     #: approximate the trajectory with a straight line and define it as z axis
     #: this will help comparing different trajectories with each other
     rotation = Property(depends_on = ['trajectory','time_data.digest', 'z_orientation'])
@@ -382,7 +390,7 @@ class CollectGridTrajSpectra(Spectra):
     
     # internal identifier
     digest = Property( 
-        depends_on = ['time_data.digest', 'block_size', 
+        depends_on = ['source.digest', 'block_size', 
             'window', 'overlap', 'precision', 'trajectory.digest',
             'mics.digest', 'grid.digest'], 
         )
@@ -450,12 +458,19 @@ class CollectGridTrajSpectra(Spectra):
                             [ sin_alpha, cos_alpha,  0]])# MicGeomSetup in Wesendorf
             
             Ry_WesAIAA = np.array([[ 0, 1, 0],
-                                [ 0, 0,-1],
-                                [ 1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für AIAA, Ri "Zurück")
+                                   [ 0, 0,-1],
+                                   [ 1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für AIAA, Ri "Zurück")
             Ry_WesDAGA = np.array([[ 0,-1, 0],
-                                [ 0, 0,-1],
-                                [-1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für DAGA, Ri "Hin", wenn unten auch unverändert)
-            Ry_neg = Ry_Wes
+                                   [ 0, 0,-1],
+                                   [-1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für DAGA, Ri "Hin", wenn unten auch unverändert)
+            Ry_Lauf_OW = np.array([[ 0,-1, 0],
+                                   [ 0, 0, 1],
+                                   [-1, 0, 0]])# vereinfacht Lauf O->W # DEGA2025-09 Symp
+            Ry_Lauf_WO = np.array([[ 0, 1, 0],
+                                   [ 0, 0, 1],
+                                   [ 1, 0, 0]])# vereinfacht Lauf W->O # evtl. DEGA2025-09 Symp
+            
+            Ry_neg = Ry_Lauf_OW
         
         return Ry_neg
     
@@ -529,7 +544,7 @@ class CollectGridTrajSpectra(Spectra):
                 xrel = mpos - np.array(trajpos)[:, np.newaxis]
                 
                 # get relative spherical coords
-                r = np.norm(xrel, axis=0)
+                r = np.linalg.norm(xrel, axis=0)
                 thetas = np.arccos(xrel[2]/r) # polar angle / latitude (0..180°) 0..pi
                 phis =  np.arctan2(xrel[1], xrel[0]) # azimuthal angle / longitude (0..360°) 0..2pi
                 #thetas = arccos(-xrel[0]/r) # polar angle / latitude (0..180°) 0..pi

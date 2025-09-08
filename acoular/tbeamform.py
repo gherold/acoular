@@ -513,7 +513,7 @@ class DedopplerTimeTraj(BeamformerTimeTraj):
     
     #grid = Instance(RectGrid(x_min=0, x_max=0,y_min=0,y_max=0,z=0,increment=0.1),RectGrid)
     
-    def delay_and_sum(self,num,p_res,d_interp2,d_index,amp): 
+    def _delay_and_sum(self,num,p_res,d_interp2,d_index,amp): 
         ''' standard delay-and-sum method, but without the summing ''' 
         if self.precision==64:
             fdtype = np.float64
