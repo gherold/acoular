@@ -36,7 +36,7 @@ from .base import SamplesGenerator
 from .configuration import config
 from .deprecation import deprecated_alias
 from .fastFuncs import calcCSM
-from .grids import LatLongSphereGrid, LatLongSphereGrid2025
+from .grids import LatLongSphereGrid, LatLongSphereGrid
 from .h5cache import H5cache
 from .h5files import H5CacheFileBase
 from .internal import digest
