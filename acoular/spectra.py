@@ -98,7 +98,8 @@ class BaseSpectra(ABCHasStrictTraits):
     #: - ``'75%'``
     #:
     #: - ``'87.5%'``
-    overlap = Map({'None': 1, '50%': 2, '75%': 4, '87.5%': 8}, default_value='None', desc='overlap of FFT blocks')
+    overlap = Map({'None': 1, '50%': 2, '75%': 4, '87.5%': 8, 
+                             '93.75%': 16, '97%':32}, default_value='None', desc='overlap of FFT blocks')
 
     #: FFT block size. Must be one of: ``128``, ``256``, ``512``, ``1024``, ... ``65536``.
     #: Default is ``1024``.
