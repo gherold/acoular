@@ -214,7 +214,7 @@ class Spectra (BaseSpectra):
     h5f = Instance( H5CacheFileBase, transient = True )
     
     #: Name of the cache file without extension, readonly.
-    basename = Property( depends_on = 'time_data.digest', 
+    basename = Property( depends_on = 'source.digest', 
         desc="basename for cache file")
     
     
@@ -231,14 +231,14 @@ class Spectra (BaseSpectra):
 
     @cached_property
     def _get_basename( self ):
-        if 'basename' in self.time_data.all_trait_names():
-            return self.time_data.basename
+        if 'basename' in self.source.all_trait_names():
+            return self.source.basename
         else: 
-            return self.time_data.__class__.__name__ + self.time_data.digest
+            return self.source.__class__.__name__ + self.source.digest
 
-    @property_depends_on('time_data.numsamples, block_size, overlap')
+    @property_depends_on('source.num_samples, block_size, overlap')
     def _get_num_blocks ( self ):
-        return self.overlap_*self.time_data.numsamples//self.block_size-\
+        return self.overlap_*self.source.num_samples//self.block_size-\
         self.overlap_+1
 
 
@@ -321,7 +321,7 @@ class Spectra (BaseSpectra):
         if not self.h5f.is_cached(nodename): 
             if config.global_caching == 'readonly': 
                 return func()
-#            print("create array, data not cached for",nodename)
+            print("create array, data not cached for",nodename)
             self.h5f.create_compressible_array(nodename,shape,precision)
             
         ac = self.h5f.get_data_by_reference(nodename)
@@ -365,7 +365,7 @@ class CollectGridTrajSpectra(Spectra):
 
     #: approximate the trajectory with a straight line and define it as z axis
     #: this will help comparing different trajectories with each other
-    rotation = Property(depends_on = ['trajectory','time_data.digest', 'z_orientation'])
+    rotation = Property(depends_on = ['trajectory','source.digest', 'z_orientation'])
     
     #: :class:`~acoular.microphones.MicGeom` object that provides the microphone locations.
     mics = Instance(MicGeom, 
@@ -526,7 +526,7 @@ class CollectGridTrajSpectra(Spectra):
         trajblock = self.rotraj.traj(t_start, delta_t=dt)
         
         ### temporary, for checking and debugging
-        spherical_coords = np.zeros((3, t.numchannels, self.num_blocks))
+        spherical_coords = np.zeros((3, t.num_channels, self.num_blocks))
         isc = 0       
         ### ------------------
         
@@ -680,7 +680,7 @@ class CollectDetailedGridTrajSpectra(CollectGridTrajSpectra):
         mpos = rot @ self.mics.mpos    
         
         # some abbreviations for spectra calculation
-        t = self.time_data
+        t = self.source
         wind = self.window_( self.block_size )
         weight = np.dot( wind, wind )
         wind = wind[np.newaxis, :].swapaxes( 0, 1 )
@@ -1376,7 +1376,7 @@ class PowerSpectraDR( PowerSpectra ):
 
     # internal identifier
     digest = Property( 
-        depends_on = ['time_data.digest', 'calib.digest', 'block_size', 
+        depends_on = ['source.digest', 'calib.digest', 'block_size', 
             'window', 'overlap', 'precision', 'n_iter'], 
         )
 
