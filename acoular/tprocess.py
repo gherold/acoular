@@ -1803,7 +1803,7 @@ class FiltOctave(Filter):
     #: - ``'Third octave'``: Third-octave band filter.
     #:
     #: Default is ``'Octave'``.
-    fraction = Map({'Octave': 1, 'Third octave': 3}, default_value='Octave', desc='fraction of octave')
+    fraction = Map({'Octave': 1, 'Third octave': 3, 3:3, 8:8, 12:12, 1:1}, default_value='Octave', desc='fraction of octave')
 
     #: The order of the IIR filter, which affects the steepness of the filter's roll-off.
     #: Default is ``3``.
