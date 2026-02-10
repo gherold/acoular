@@ -365,7 +365,7 @@ class CollectGridTrajSpectra(Spectra):
 
     #: approximate the trajectory with a straight line and define it as z axis
     #: this will help comparing different trajectories with each other
-    rotation = Property(depends_on = ['trajectory','source.digest', 'z_orientation'])
+    rotation = Property(depends_on = ['trajectory.digest', 'source.digest', 'z_orientation'])
     
     #: :class:`~acoular.microphones.MicGeom` object that provides the microphone locations.
     mics = Instance(MicGeom, 
@@ -376,7 +376,7 @@ class CollectGridTrajSpectra(Spectra):
                  desc="grid for spectra collection")
     
     ### for debugging and checking
-    rotraj =  Instance(Trajectory(),Trajectory)
+    #rotraj =  Instance(Trajectory(),Trajectory)
     _sph_coords = CArray()
     _grid_num_blocks = CArray()
     ### ------------------
@@ -390,9 +390,9 @@ class CollectGridTrajSpectra(Spectra):
     
     # internal identifier
     digest = Property( 
-        depends_on = ['source.digest', 'block_size', 
-            'window', 'overlap', 'precision', 'trajectory.digest',
-            'mics.digest', 'grid.digest'], 
+        depends_on = [
+            'source.digest', 'block_size', 'window', 'overlap', 'precision', 
+            'trajectory.digest', 'mics.digest', 'grid.digest'], 
         )
 
     @cached_property
@@ -404,7 +404,7 @@ class CollectGridTrajSpectra(Spectra):
         return self.grid.size
     
     
-    @property_depends_on('digest')
+    @property_depends_on(['digest'])
     def _get_blocks_per_grid ( self ):
         """
 
@@ -424,9 +424,16 @@ class CollectGridTrajSpectra(Spectra):
     @cached_property
     def _get_rotation ( self ):
         if self.z_orientation:
-            Ry_neg = np.array([[ 1, 0, 0],
+            Ry_neg_RAR = np.array([[ 1, 0, 0],
                             [ 0, 1, 0],
                             [ 0, 0, 1]])
+            Ry_Lauf_WO = np.array([[ 0,-1, 0],
+                                   [ 0, 0, 1],
+                                   [-1, 0, 0]])# vereinfacht Lauf O->W # DEGA2025-09 Symp
+            Ry_Lauf_OW = np.array([[ 0, 1, 0],
+                                   [ 0, 0, 1],
+                                   [ 1, 0, 0]])# vereinfacht Lauf W->O # evtl. DEGA2025-09 Symp
+            Ry_neg = Ry_Lauf_OW
         else:
             
             t_end = self.source.num_samples/self.source.sample_freq
@@ -437,13 +444,12 @@ class CollectGridTrajSpectra(Spectra):
             # distance in xz plane (y is ignored b/c gravity should orient drone), RAR
             #r_xz = (vec[0]**2 + vec[2]**2)**0.5     #xz plane, RAR
             
-            # distance in plane parallel to ground, Wesendorf: dim 0, 1 (xy)
+            # distance in plane parallel to ground, Wesendorf/Lauf: dim 0, 1 (xy)
             rtraj = (vec[0]**2 + vec[1]**2)**0.5 
 
-
             # get angle alpha
-            sin_alpha = vec[0]/rtraj
-            cos_alpha = vec[1]/rtraj
+            cos_alpha = vec[0]/rtraj
+            sin_alpha = vec[1]/rtraj
             #cos_alpha = -vec[2]/r_xz # minus sign because left-oriented z axis
     
             
@@ -454,23 +460,29 @@ class CollectGridTrajSpectra(Spectra):
                             [-sin_alpha, 0, cos_alpha]])# MicGeom-Setup im RAR
             
             Ry_Wes = np.array([[-cos_alpha, sin_alpha,  0],
-                            [         0,         0, -1],
-                            [ sin_alpha, cos_alpha,  0]])# MicGeomSetup in Wesendorf
+                               [         0,         0, -1],
+                               [ sin_alpha, cos_alpha,  0]])# MicGeomSetup in Wesendorf
             
+            Ry_Lauf = np.array([[ sin_alpha, cos_alpha,  0],
+                                [         0,         0,  1],
+                                [ cos_alpha, -sin_alpha, 0]])# MicGeomSetup in Lauf
+
+
+
             Ry_WesAIAA = np.array([[ 0, 1, 0],
                                    [ 0, 0,-1],
                                    [ 1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für AIAA, Ri "Zurück")
             Ry_WesDAGA = np.array([[ 0,-1, 0],
                                    [ 0, 0,-1],
                                    [-1, 0, 0]])# vereinfachtes MicGeomSetup in Wesendorf (funktioniert für DAGA, Ri "Hin", wenn unten auch unverändert)
-            Ry_Lauf_OW = np.array([[ 0,-1, 0],
+            Ry_Lauf_WO = np.array([[ 0,-1, 0],
                                    [ 0, 0, 1],
                                    [-1, 0, 0]])# vereinfacht Lauf O->W # DEGA2025-09 Symp
-            Ry_Lauf_WO = np.array([[ 0, 1, 0],
+            Ry_Lauf_OW = np.array([[ 0, 1, 0],
                                    [ 0, 0, 1],
                                    [ 1, 0, 0]])# vereinfacht Lauf W->O # evtl. DEGA2025-09 Symp
             
-            Ry_neg = Ry_Lauf_OW
+            Ry_neg = Ry_Lauf
         
         return Ry_neg
     
@@ -486,9 +498,10 @@ class CollectGridTrajSpectra(Spectra):
         # rotation matrix
         rot = self.rotation
         # initialize rotated trajectory
-        #rotraj = Trajectory()
+        rotraj = Trajectory()
         for key in self.trajectory.points.keys():
-            self.rotraj.points[key] = tuple(rot @ self.trajectory.points[key])#changed because coord system changed
+            rotraj.points[key] = tuple(rot @ self.trajectory.points[key])#changed because coord system changed
+            #self.rotraj.points[key] = tuple(rot @ self.trajectory.points[key])#changed because coord system changed
             #self.rotraj.points[key] = tuple(self.trajectory.points[key])
         
         # get relative orientation of mic geom
@@ -512,7 +525,7 @@ class CollectGridTrajSpectra(Spectra):
             temp = np.zeros((2*bs, t.num_channels), dtype=self.precision)
             
         # allocate array with gridpos-specific averaging number
-        grid_num_blocks = np.zeros((self.num_channels,),dtype=np.uint32)
+        grid_num_blocks = np.zeros((self.num_channels,),dtype=np.int32)
         # allocate array fpr spectra results
         powspec = np.zeros((numfreq, self.num_channels), dtype=self.precision_)
         pos = bs
@@ -523,7 +536,7 @@ class CollectGridTrajSpectra(Spectra):
         # start trajectory at "center" of first block
         t_start = 1/t.sample_freq * bs/2
         # define trajectory whose position advances each block
-        trajblock = self.rotraj.traj(t_start, delta_t=dt)
+        trajblock = rotraj.traj(t_start, delta_t=dt)
         
         ### temporary, for checking and debugging
         spherical_coords = np.zeros((3, t.num_channels, self.num_blocks))
@@ -594,7 +607,7 @@ class CollectGridTrajSpectra(Spectra):
             func = self.calc_grid_num_blocks
             numfreq = int(self.block_size/2 + 1)
             shape = (self.num_channels,)
-            precision = 'uint32'
+            precision = 'int32'
         else:
             raise NotImplementedError('Only auto-power spectrum and number of blocks supported.')
 
@@ -696,7 +709,7 @@ class CollectDetailedGridTrajSpectra(CollectGridTrajSpectra):
             temp = np.zeros((2*bs, t.numchannels), dtype=self.precision)
             
         # allocate array with gridpos-specific averaging number
-        grid_num_blocks = np.zeros((self.numchannels,),dtype=np.uint32)
+        grid_num_blocks = np.zeros((self.numchannels,),dtype=np.int32)
         
         # allocate history array, for 5 representative frequencies (500,1k,2k,4k,8k Hz)
         history_per_grid = np.empty((self.num_blocks,self.numchannels,5),dtype=self.precision_)
@@ -781,7 +794,7 @@ class CollectDetailedGridTrajSpectra(CollectGridTrajSpectra):
         elif traitname == 'blocks_per_grid':
             func = self.calc_grid_num_blocks
             shape = (self.numchannels,)
-            precision = 'uint32'
+            precision = 'int32'
         elif traitname == 'spec_history_per_grid':
             func = self.calc_spec_history_per_grid
             shape = (self.num_blocks,self.numchannels,5)
