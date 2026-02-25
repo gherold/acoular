@@ -55,6 +55,12 @@ class TimeSamplesAIAABenchmark(TimeSamples):
     objects.
     """
 
+    # Checksum over first data entries of all channels
+    _datachecksum = Property(depends_on=['data'])
+
+    def _get__datachecksum(self):
+        return self.data[:, 0].sum()
+
     def _load_timedata(self):
         """Loads timedata from .h5 file. Only for internal use."""
         self.data = self.h5f.get_data_by_reference('MicrophoneData/microphoneDataPa')
