@@ -55,17 +55,63 @@ class TimeSamplesAIAABenchmark(TimeSamples):
     objects.
     """
 
+    # Checksum over first data entries of all channels
+    _datachecksum = Property(depends_on=['data'])
+
+    def _get__datachecksum(self):
+        return self.data[:, 0].sum()
+
+    @observe('data')
+    def _load_shapes(self, event):  # noqa ARG002
+        # Set :attr:`num_channels` and :attr:`num_samples` from data.
+        if self.data is not None:
+            self.num_channels, self.num_samples = self.data.shape
+
     def _load_timedata(self):
         """Loads timedata from .h5 file. Only for internal use."""
-        self.data = self._h5f.get_data_by_reference('MicrophoneData/microphoneDataPa')
-        self.sample_freq = self._h5f.get_node_attribute(self.data, 'sampleRateHz')
-        (self.num_samples, self.num_channels) = self.data.shape
+        self.data = self.h5f.get_data_by_reference('MicrophoneData/microphoneDataPa')
+        self.sample_freq = self.h5f.get_node_attribute(self.data, 'sampleRateHz')
 
     def _load_metadata(self):
         """Loads metadata from .h5 file. Only for internal use."""
         self.metadata = {}
         if '/MetaData' in self._h5f:
             self.metadata = self._h5f.node_to_dict('/MetaData')
+
+    def result(self, num=128):
+        """
+        Generate blocks of time-domain data iteratively.
+
+        The :meth:`result` method is a Python generator that yields blocks of time-domain data
+        of the specified size. Data is either read from an HDF5 file (if :attr:`file` is set)
+        or from a NumPy array (if :attr:`data` is directly provided).
+
+        Parameters
+        ----------
+        num : :class:`int`, optional
+            The size of each block to be yielded, representing the number of time-domain
+            samples per block.
+
+        Yields
+        ------
+        :class:`numpy.ndarray`
+            A 2D array of shape (``num``, :attr:`num_channels`) representing a block of
+            time-domain data. The last block may have fewer than ``num`` samples if the total number
+            of samples is not a multiple of ``num``.
+
+        Raises
+        ------
+        :obj:`OSError`
+            If no samples are available (i.e., :attr:`num_samples` is ``0``).
+        """        
+        if self.num_samples == 0:
+            msg = 'no samples available'
+            raise OSError(msg)
+        self._datachecksum  # trigger checksum calculation # noqa: B018
+        i = 0
+        while i < self.num_samples:
+            yield self.data[:, i : num + i].T
+            i += num
 
 
 class TriggerAIAABenchmark(TimeSamplesAIAABenchmark):
