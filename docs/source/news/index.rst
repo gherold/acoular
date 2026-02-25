@@ -5,6 +5,8 @@ Upcoming Release
 ------------------------
     **Internal**
         * improves inheritance and class structure of :class:`~acoular.sources.MaskedTimeSamples`.
+    **Bugfixes**
+        * fixes orientation of :class:`~acoular.aiaa.TimeSamplesAIAABenchmark` data (AIAA benchmark h5 data h5 is transposed with respect to Acoular)
 
 26.01
 ------------------------
