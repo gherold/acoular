@@ -69,8 +69,8 @@ class TimeSamplesAIAABenchmark(TimeSamples):
 
     def _load_timedata(self):
         """Loads timedata from .h5 file. Only for internal use."""
-        self.data = self.h5f.get_data_by_reference('MicrophoneData/microphoneDataPa')
-        self.sample_freq = self.h5f.get_node_attribute(self.data, 'sampleRateHz')
+        self.data = self._h5f.get_data_by_reference('MicrophoneData/microphoneDataPa')
+        self.sample_freq = self._h5f.get_node_attribute(self.data, 'sampleRateHz')
 
     def _load_metadata(self):
         """Loads metadata from .h5 file. Only for internal use."""
