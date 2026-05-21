@@ -361,7 +361,7 @@ class CollectGridTrajSpectra(Spectra):
     
     
     #: if set to True, ignore first and last pos in traj for rotational orientation
-    z_orientation = Bool(False)
+    z_orientation = Union( Bool(False), Int)
 
     #: approximate the trajectory with a straight line and define it as z axis
     #: this will help comparing different trajectories with each other
@@ -392,6 +392,7 @@ class CollectGridTrajSpectra(Spectra):
     digest = Property( 
         depends_on = [
             'source.digest', 'block_size', 'window', 'overlap', 'precision', 
+            'z_orientation',
             'trajectory.digest', 'mics.digest', 'grid.digest'], 
         )
 
@@ -430,9 +431,10 @@ class CollectGridTrajSpectra(Spectra):
             Ry_Lauf_WO = np.array([[ 0,-1, 0],
                                    [ 0, 0, 1],
                                    [-1, 0, 0]])# vereinfacht Lauf O->W # DEGA2025-09 Symp
-            Ry_Lauf_OW = np.array([[ 0, 1, 0],
+            ori = int(self.z_orientation)
+            Ry_Lauf_OW = np.array([[ 0, ori, 0],
                                    [ 0, 0, 1],
-                                   [ 1, 0, 0]])# vereinfacht Lauf W->O # evtl. DEGA2025-09 Symp
+                                   [ ori, 0, 0]])# vereinfacht Lauf W->O # evtl. DEGA2025-09 Symp
             Ry_neg = Ry_Lauf_OW
         else:
             
@@ -463,9 +465,15 @@ class CollectGridTrajSpectra(Spectra):
                                [         0,         0, -1],
                                [ sin_alpha, cos_alpha,  0]])# MicGeomSetup in Wesendorf
             
-            Ry_Lauf = np.array([[ sin_alpha, cos_alpha,  0],
-                                [         0,         0,  1],
-                                [ cos_alpha, -sin_alpha, 0]])# MicGeomSetup in Lauf
+            # MicGeomSetup in Lauf
+            # translate new coords to old (expected) orientation:
+            # new: x in flight direction, old: z in flight direction
+            # new: z upwards, old: y upwards
+            # old x corresponds to new y
+            # TODO: update to new convention with x in flight dir and z upwards
+            Ry_Lauf = np.array([[ sin_alpha, cos_alpha,  0], # new y to old x
+                                [         0,         0,  1], # new z to old y
+                                [ cos_alpha, -sin_alpha, 0]])# new x to old z
 
 
 
